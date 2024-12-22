@@ -49,6 +49,22 @@ fn root_organs_positions(
     root_organ_position
 }
 
+// This function return the direction to target
+fn calculate_direction(current: (i32, i32), target: (i32, i32)) -> String {
+    if current.0 == target.0 {
+        if current.1 < target.1 {
+            "S".to_string()
+        } else {
+            "N".to_string()
+        }
+    } else if current.0 < target.0 {
+        "E".to_string()
+    } else {
+        "W".to_string()
+    }
+}
+
+
 // THis will calculate the nearest organ to protein
 fn find_nearest_organ(
     organ_position: &Vec<(i32, i32)>,
@@ -100,13 +116,26 @@ fn check_root_id(
 
 // Function that checks if the SPORER needed or not
 fn is_sporer_needed(
-    store_positions_type: &HashMap<(i32, i32), String>,
-    
+    my_organ_position: &HashMap<(i32, i32), i32>,
+    proposed_protein_position: &Vec<(i32, i32)>,
+    width: i32,
+    height: i32,
 ) -> bool {
-
+    for &(protein_x, protein_y) in proposed_protein_position {
+        for (&(organ_x, organ_y), _) in my_organ_position.iter() {
+            // You can add some specific conditions to check the relationship 
+            // between organ positions and protein positions here.
+            // For example, if any organ is within a certain range from the protein
+            // or if a specific type of protein requires a SPORER.
+            if (protein_x - organ_x).abs() <= width / 2 && (protein_y - organ_y).abs() <= height / 2 {
+                return true;
+            }
+        }
+    }
 
     false
 }
+
 
 // This function is responsible for giving the id of a specific organ
 fn search_for_organ_id(
@@ -177,6 +206,7 @@ fn near_opponent(
 fn find_next_position_towards_a(
     my_organ_position: &Vec<(i32, i32)>,
     store_positions_type: &HashMap<(i32, i32), String>,
+    proposed_protein_position: &Vec<(i32, i32)>,
     harvesting: Vec<(i32, i32)>,
     current_position: (i32, i32),
     max_distance: i32,
@@ -191,15 +221,16 @@ fn find_next_position_towards_a(
             store_position.insert((a_x, a_y), a_type.clone());
         }
     }
-    let a_positions = search_for_a_positions(&store_position);
+    // let a_positions = search_for_a_positions(&store_position);
     let mut harvest: (i32, i32) = (-1, -1); 
-    eprintln!("a_positions: {:?}", a_positions);
+    // eprintln!("a_positions: {:?}", a_positions);
 
     // Check for type A within range and find direction
-    for &(a_x, a_y) in &a_positions {
+    for &(a_x, a_y) in proposed_protein_position {
         let mut distance = manhattan_distance(current_position, (a_x, a_y));
 
         if distance <= max_distance && distance != 1 {
+            eprintln!("that was the first condition");
             // Calculate the direction
             let direction = if a_x == current_position.0 {
                 if a_y < current_position.1 {
@@ -246,6 +277,7 @@ fn find_next_position_towards_a(
 
     // Fallback to default movement logic if no valid A positions within range
     if let Some((new_x, new_y)) = find_next_position_to_a(store_positions_type, current_position.0, current_position.1, width, height) {
+        eprintln!("that was the second condition");
         let check_opponent = near_opponent(my_organ_position, store_positions_type, (new_x, new_y));
         if check_opponent.0 {
             return Some(((new_x, new_y), std::i32::MAX, check_opponent.1, harvest, check_opponent.0));
@@ -255,6 +287,7 @@ fn find_next_position_towards_a(
 
     for &(x, y) in my_organ_position.iter() {
         if let Some((new_x, new_y)) = find_next_position_to_a(store_positions_type, x, y, width, height) {
+            eprintln!("that was the third condition");
             let check_opponent = near_opponent(my_organ_position, store_positions_type, (new_x, new_y));
             if check_opponent.0 {
                 return Some(((new_x, new_y), std::i32::MAX, check_opponent.1, harvest, check_opponent.0));
@@ -321,6 +354,7 @@ fn main() {
 
     let mut store_owner_organ: HashMap<(i32, i32), i32> = HashMap::new();
     let mut actual_positions: HashMap<i32, (i32, i32)> = HashMap::new(); 
+    let mut proposed_protein_position: Vec<(i32, i32)> = Vec::new();
     let mut turn = -1;
 
     let mut harvesting: Vec<(i32, i32)> = Vec::new();
@@ -368,6 +402,7 @@ fn main() {
                     actual_positions.entry(id).and_modify(|val| { val.0 = x; val.1 = y; }).or_insert((x, y));
                 }
             }
+            proposed_protein_position = proposed_proteins(&store_positions_type, &my_organ_position, &opp_organ_position);
             turn = 0;
         }
         // INPUT for my organism's status
@@ -396,6 +431,7 @@ fn main() {
             if let Some(((new_x, new_y), distance, direction, harvest, attack)) = find_next_position_towards_a(
                 &my_organ_position,
                 &store_positions_type,
+                &proposed_protein_position,
                 harvesting.clone(),
                 (target_x, target_y),
                 5,
@@ -406,13 +442,13 @@ fn main() {
                 if attack {
                     // It will throw an TENTACLE command to attack nearbe
                     actual_positions.entry(id).and_modify(|val| { val.0 = new_x; val.1 = new_y; }).or_insert((new_x, new_y));
-                    println!("GROW {} {} {} TENTACLE {}", id_2, target_x, target_y, direction);
+                    println!("GROW {} {} {} TENTACLE {}", id_2, new_x, new_y, direction);
                 }
-                if distance == 1 {
+                else if distance == 1 {
                     // Print special grow command when near "A"
                     actual_positions.entry(id).and_modify(|val| { val.0 = new_x; val.1 = new_y; }).or_insert((new_x, new_y));
                     harvesting.push(harvest);
-                    println!("GROW {} {} {} HARVESTER {}", id_2, target_x, target_y, direction);
+                    println!("GROW {} {} {} HARVESTER {}", id_2, new_x, new_y, direction);
                 } else {
                     actual_positions.entry(id).and_modify(|val| { val.0 = new_x; val.1 = new_y; }).or_insert((new_x, new_y));
                     println!("GROW {} {} {} BASIC", id_2, new_x, new_y);
