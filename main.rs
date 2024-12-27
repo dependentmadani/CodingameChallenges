@@ -1,3 +1,10 @@
+//**************************************************************************
+//TODO:
+/*
+- First 10 turns, I should harvest on C protein and A protein
+*/
+//**************************************************************************
+
 use std::collections::HashMap;
 use std::io;
 
@@ -38,8 +45,8 @@ impl OrganType {
                 energy.1 >= required_costs.1 && energy.2 >= required_costs.2 && energy.3 >= required_costs.3
             }
             "SPORER" if *self == OrganType::SPORER => {
-                energy.0 >= required_costs.0 && energy.1 >= required_costs.1 * 2 &&
-                energy.2 >= required_costs.2 && energy.3 >= required_costs.3 * 2
+                energy.0 >= required_costs.0 * 2 && energy.1 >= required_costs.1 * 3 &&
+                energy.2 >= required_costs.2 * 2 && energy.3 >= required_costs.3 * 3
             }
             "ROOT" if *self == OrganType::ROOT => {
                 energy.0 >= required_costs.0 && energy.1 >= required_costs.1 &&
@@ -54,6 +61,19 @@ macro_rules! parse_input {
     ($x:expr, $t:ident) => {
         $x.trim().parse::<$t>().unwrap()
     };
+}
+
+fn is_position_ok(
+    new_position: POSITION,
+    limit: POSITION
+) -> bool {
+    
+    if new_position.0 >= 0 && new_position.1 >= 0 &&
+        new_position.0 < limit.0 && new_position.1 < limit.1 {
+        return true;
+    }
+
+    false
 }
 
 fn search_for_root_basic_or_a_in_owner(
@@ -72,15 +92,6 @@ fn search_for_root_basic_or_a_in_owner(
     root_basic_or_a_positions
 }
 
-//**************************************************************************
-//TODO:
-/*
-- Check the available protein source
-- Decide the proteins that I should get
-- Check if the SPORER is need based on the position of the root and the protein
-- 
-*/
-//**************************************************************************
 
 // This function is responsible for finding all my root organs
 fn root_organs_positions(
@@ -139,8 +150,15 @@ fn proposed_proteins(
     let mut proteins: Vec<POSITION> = Vec::new();
 
     for (&(x, y), value) in store_positions_type.iter() {
-        if value == "A" || value == "B" || value == "C" || value == "D" {
+        if value == "A" {
+            if find_nearest_organ(my_organ_position, (x, y)) <= find_nearest_organ(opp_organ_position, (x, y)) {
+                proteins.push((x, y));
+            }
+        }
+    }
 
+    for (&(x, y), value) in store_positions_type.iter() {
+        if value == "B" || value == "C" || value == "D" {
             if find_nearest_organ(my_organ_position, (x, y)) <= find_nearest_organ(opp_organ_position, (x, y)) {
                 proteins.push((x, y));
             }
@@ -150,16 +168,59 @@ fn proposed_proteins(
     proteins
 }
 
-// This function will return the root id of a specific organ
-
 // This function will check the root of a specific organ
 fn check_root_id(
     store_owner_organ: &HashMap<POSITION, i32>,
-    organ_positon: POSITION
+    organ_position: POSITION
 ) -> i32 {
     store_owner_organ.iter()
-        .find_map(|(&key, &val)| {if key.0 == organ_positon.0 && key.1 == organ_positon.1 { Some(val) } else { None }})
+        .find_map(|(&key, &val)| {if key.0 == organ_position.0 && key.1 == organ_position.1 { Some(val) } else { None }})
         .unwrap_or(-1)
+}
+
+// This function will check if the position where the spore want to create root is possible
+fn is_spore_position_possible(
+    store_positions_type: &HashMap<POSITION, String>,
+    my_organ_position: POSITION,
+    new_root_position: POSITION
+) -> bool {
+    if my_organ_position.0 == new_root_position.0 {
+        if my_organ_position.1 + 1 < new_root_position.1 {
+            for y in (my_organ_position.1 + 1) .. (new_root_position.1) {
+                // eprintln!("1 - the position x : {:?} and y {y}", my_organ_position.0);
+                if store_positions_type.contains_key(&(my_organ_position.0, y)) {
+                    return false;
+                }
+            } 
+        } else {
+            for y in  (new_root_position.1) .. (my_organ_position.1 + 1) {
+                // eprintln!("2 - the position x : {:?} and y {y}", my_organ_position.0);
+                if store_positions_type.contains_key(&(my_organ_position.0, y)) {
+                    return false;
+                }
+            } 
+        }
+        return true;
+    } else if my_organ_position.1 == new_root_position.1 {
+        if (my_organ_position.0 + 1) < (new_root_position.0) {
+            for x in (my_organ_position.0 + 1) .. (new_root_position.0) {
+                // eprintln!("3 - the position x : {x} and y {:?}", my_organ_position.1);
+                if store_positions_type.contains_key(&(x, my_organ_position.1)) {
+                    return false;
+                }
+            } 
+        } else {
+            for x in (new_root_position.0) .. (my_organ_position.0 + 1) {
+                // eprintln!("4 - the position x : {x} and y {:?}", my_organ_position.1);
+                if store_positions_type.contains_key(&(x, my_organ_position.1)) {
+                    return false;
+                }
+            } 
+        }
+        return true;
+    }
+
+    false
 }
 
 // Function that check whether sporer is needed or not
@@ -167,9 +228,11 @@ fn is_sporer_needed(
     store_positions_type: &HashMap<POSITION, String>,
     my_organ_position: &Vec<POSITION>,
     proposed_protein_position: &Vec<POSITION>,
-    protein_energy: ENERGY
+    protein_energy: ENERGY,
+    width: i32,
+    height: i32
 ) -> bool {
-    let directions = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+    let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
     let type_organ: OrganType = OrganType::SPORER;
 
     for &(protein_x, protein_y) in proposed_protein_position {
@@ -178,16 +241,14 @@ fn is_sporer_needed(
                 let new_x = organ_x + dx;
                 let new_y = organ_y + dy;
                 // This condition to check that the the grid position is free
-                if !store_positions_type.contains_key(&(new_x, new_y)) {
-                    // eprintln!("at least it was in this condition {:?} {:?}", protein_x - 1 == new_x, (new_y - protein_y).abs() > 3);
-                    if (protein_x - 1 == new_x || protein_x + 1 == new_x) && (new_y - protein_y).abs() > 3 && type_organ.verify("SPORER", protein_energy) {
-                        // eprintln!("The function of sporer need! on x is true");
+                if !store_positions_type.contains_key(&(new_x, new_y)) &&  new_x >= 0 && new_y >= 0 && new_x < width && new_y < height {
+                    if (protein_x - 1 == new_x || protein_x + 1 == new_x) && (new_y - protein_y).abs() > 3 && type_organ.verify("SPORER", protein_energy)
+                            && (is_spore_position_possible(store_positions_type, (new_x, new_y),(protein_x - 1, protein_y)) || is_spore_position_possible(store_positions_type, (new_x, new_y),(protein_x + 1, protein_y))) {
                         return true;
-                    } else if (protein_y - 1 == new_y || protein_y + 1 == new_y) && (new_x - protein_x).abs() > 3 && type_organ.verify("SPORER", protein_energy) {
-                        // eprintln!("The function of sporer need! on y is true");
+                    } else if (protein_y - 1 == new_y || protein_y + 1 == new_y) && (new_x - protein_x).abs() > 3 && type_organ.verify("SPORER", protein_energy)
+                            && (is_spore_position_possible(store_positions_type, (new_x, new_y),(protein_x, protein_y - 1)) || is_spore_position_possible(store_positions_type, (new_x, new_y),(protein_x, protein_y + 1))) {
                         return true;
                     }
-                    // eprintln!("at least it was in this condition 2 {:?} {:?}", protein_y - 1 == new_y, (new_x - protein_x).abs() > 3);
                 }
             }
         }
@@ -200,29 +261,37 @@ fn is_sporer_needed(
 fn sporer_position(
     store_positions_type: &HashMap<POSITION, String>,
     my_organ_position: &Vec<POSITION>,
-    proposed_protein_position: &Vec<POSITION>
-) -> Option<(POSITION, POSITION, String)> {
-    let directions = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+    proposed_protein_position: &Vec<POSITION>,
+    protein_energy: ENERGY,
+    width: i32,
+    height: i32
+) -> Option<(POSITION, POSITION, POSITION, String)> {
+    let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+    let type_organ: OrganType = OrganType::SPORER;
 
+    // eprintln!("the proposed protein positions: {:?}", proposed_protein_position);
     for &(protein_x, protein_y) in proposed_protein_position {
         for &(organ_x, organ_y) in my_organ_position {
             for &(dx, dy) in &directions {
                 let new_x = organ_x + dx;
                 let new_y = organ_y + dy;
-                // This condition to check that the the grid position is free
-                if !store_positions_type.contains_key(&(new_x, new_y)) {
 
-                    if (protein_x - 1 == new_x || protein_x + 1 == new_x) && (new_y - protein_y).abs() > 3 {
+                // This condition to check that the the grid position is free
+                if !store_positions_type.contains_key(&(new_x, new_y)) &&  new_x >= 0 && new_y >= 0 && new_x < width && new_y < height {
+
+                    if (protein_x - 1 == new_x || protein_x + 1 == new_x) && (new_y - protein_y).abs() > 3 && type_organ.verify("SPORER", protein_energy)
+                    && (is_spore_position_possible(store_positions_type, (new_x, new_y),(protein_x - 1, protein_y)) || is_spore_position_possible(store_positions_type, (new_x, new_y),(protein_x + 1, protein_y))) {
                         if new_y - protein_y < 0 {
-                            return Some(((new_x, protein_y - 1), (new_x, new_y), "S".to_string()));
+                            return Some(((new_x, protein_y - 1), (new_x, new_y), (organ_x, organ_y), "S".to_string()));
                         } else if new_y - protein_y > 0 {
-                            return Some(((new_x, protein_y -1), (new_x, new_y), "N".to_string()));
+                            return Some(((new_x, protein_y -1), (new_x, new_y), (organ_x, organ_y), "N".to_string()));
                         }
-                    } else if (protein_y - 1 == new_y || protein_y + 1 == new_y) && (new_x - protein_x).abs() > 3 {
+                    } else if (protein_y - 1 == new_y || protein_y + 1 == new_y) && (new_x - protein_x).abs() > 3  && type_organ.verify("SPORER", protein_energy)
+                    && (is_spore_position_possible(store_positions_type, (new_x, new_y),(protein_x, protein_y - 1)) || is_spore_position_possible(store_positions_type, (new_x, new_y),(protein_x, protein_y + 1))) {
                         if new_x - protein_x < 0 {
-                            return Some(((protein_x -1, new_y), (new_x, new_y), "E".to_string()));
+                            return Some(((protein_x -1, new_y), (new_x, new_y), (organ_x, organ_y), "E".to_string()));
                         } else if new_x - protein_x > 0 {
-                            return Some(((protein_x -1, new_y), (new_x, new_y), "W".to_string()));
+                            return Some(((protein_x -1, new_y), (new_x, new_y), (organ_x, organ_y), "W".to_string()));
                         }
                     }
 
@@ -238,26 +307,15 @@ fn sporer_position(
 // This function is responsible for giving the id of a specific organ
 fn search_for_organ_id(
     store_id_with_position: &HashMap<POSITION, i32>, 
-    my_organ_position: &Vec<POSITION>,
-    search: POSITION
+    my_organ_position: POSITION
 ) -> i32 {
-    let mut closest_id = 0;
-    let mut min_distance = std::i32::MAX;
 
-    // Iterate over all positions in my_organ_position
-    for &(x, y) in my_organ_position.iter() {
-        let distance = (search.0 - x).abs() + (search.1 - y).abs(); // Manhattan distance
-
-        // If this position is closer than previous ones, update closest_id
-        if distance < min_distance {
-            if let Some(&organ_id) = store_id_with_position.get(&(x, y)) {
-                closest_id = organ_id;
-                min_distance = distance;
-            }
-        }
+    eprintln!("the received position {:?}", my_organ_position);
+    if let Some(&organ_id) = store_id_with_position.get(&(my_organ_position.0, my_organ_position.1)) {
+        return organ_id;
     }
 
-    closest_id
+    -1
 }
 
 // Calculate Manhattan distance between two points
@@ -271,10 +329,16 @@ fn manhattan_distance(
 // This function is responsible for proposing an attack on the opponenent
 fn near_opponent(
     my_organ_position: &Vec<POSITION>,
+    my_energy: ENERGY,
     store_positions_type: &HashMap<POSITION, String>,
     my_positions: POSITION
-) -> (bool, String) {
+) -> (bool, String, POSITION) {
+    let type_organ: OrganType = OrganType::TENTACLE;
     
+    if !type_organ.verify("TENTACLE", my_energy) {
+        return (false, "".to_string(), (-1, -1));
+    }
+
     for (&(x, y), value) in store_positions_type.iter() {
         if value == "BASIC" && !my_organ_position.contains(&(x, y)) {
             let distance = manhattan_distance(my_positions, (x, y));
@@ -292,105 +356,176 @@ fn near_opponent(
                         "W"
                     }
                 };
-                return (true, direction.to_string());
+                return (true, direction.to_string(), (x, y));
             }
         }
     }
 
-    (false, "".to_string())
+    (false, "".to_string(), (-1, -1))
+}
+
+
+// This function will decide if it should start attacking or not
+fn should_i_attack(
+    store_positions_type: &HashMap<POSITION, String>,
+    my_organ_position: &Vec<POSITION>,
+    opp_organ_position: &Vec<POSITION>,
+    my_energy: ENERGY,
+    width: i32,
+    height: i32
+) -> Option<(POSITION, POSITION, String)> {
+    let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+    let type_organ = OrganType::TENTACLE;
+
+    if type_organ.verify("TENTACLE", my_energy) {
+        return None;
+    }
+
+    for &(me_x, me_y) in my_organ_position {
+        for &(opp_x, opp_y) in opp_organ_position {
+            for &(dx, dy) in &directions {
+                let new_x = me_x + dx;
+                let new_y = me_y + dy;
+                let distance = manhattan_distance((new_x, new_y), (opp_x, opp_y));
+                if distance >= 3 && new_x >= 0 && is_position_okay_special(&store_positions_type, (new_x, new_y), width, height) {
+                    let direction = if (new_y - opp_y).abs() > (new_x - opp_x).abs() {
+                        if new_y > opp_y {
+                            "N"
+                        } else {
+                            "S"
+                        }
+                    } else {
+                        if new_x > opp_x {
+                            "E"
+                        } else {
+                            "W"
+                        }
+                    };
+                    return Some(((new_x, new_y), (me_x, me_y), direction.to_string()));
+                }
+            }
+        }
+    }
+
+    None    
 }
 
 // Function to find the next position towards "A" within a given range (max_distance = 5)
 fn find_next_position_towards_a(
     my_organ_position: &Vec<POSITION>,
+    opp_organ_position: &Vec<POSITION>,
+    store_organ_owner:  &HashMap<POSITION, i32>,
     store_positions_type: &HashMap<POSITION, String>,
     proposed_protein_position: &Vec<POSITION>,
+    my_energy: ENERGY,
     harvesting: Vec<POSITION>,
     current_position: POSITION,
     max_distance: i32,
     width: i32,
     height: i32,
-) -> Option<(POSITION, i32, String, POSITION, bool)> {
+) -> Option<(POSITION, POSITION, i32, String, POSITION, bool)> {
     // Get all "A" positions
-    let mut store_position: HashMap<POSITION, String> = HashMap::new();
-    let attack = false;
-    for (&(a_x, a_y), a_type) in store_positions_type {
-        if !harvesting.contains(&(a_x, a_y)) {
-            store_position.insert((a_x, a_y), a_type.clone());
-        }
-    }
-    // let a_positions = search_for_a_positions(&store_position);
+    // let mut store_position: HashMap<POSITION, String> = HashMap::new();
+    let mut attack = false;
     let mut harvest: POSITION = (-1, -1); 
-    // eprintln!("a_positions: {:?}", a_positions);
+    let mut owner: i32 = if store_organ_owner.contains_key(&current_position) {
+        store_organ_owner[&current_position]
+    } else {
+        -1
+    };
 
+    if let Some(((new_x, new_y), (position_x, position_y), direction)) = should_i_attack(&store_positions_type, my_organ_position, opp_organ_position, my_energy, width, height) {
+        attack = true;
+        return Some(((new_x, new_y), (position_x, position_y), std::i32::MAX, direction, harvest, attack));
+    }
+    // eprintln!("check the proposed protein: {:?}", proposed_protein_position);
+    // for (&(a_x, a_y), a_type) in store_positions_type {
+    //     if !harvesting.contains(&(a_x, a_y)) {
+    //         store_position.insert((a_x, a_y), a_type.clone());
+    //     }
+    // }
+    // let a_positions = search_for_a_positions(&store_position);
+    // eprintln!("a_positions: {:?}", a_positions);
     // Check for type A within range and find direction
+    let type_organ: OrganType = OrganType::HARVESTER;
+    let mut updated = false;
+    let mut new_position = (0, 0);
+    let mut distance = std::i32::MAX;
+    let mut min_distance: i32 = std::i32::MAX;
+    let mut protein_position: (i32, i32) = (-1, -1);
+
     for &(a_x, a_y) in proposed_protein_position {
-        let mut distance = manhattan_distance(current_position, (a_x, a_y));
+        distance = manhattan_distance(current_position, (a_x, a_y));
 
         if distance <= max_distance && distance != 1 {
-            eprintln!("that was the first condition");
+            // eprintln!("that was the first condition {:?}", (a_x, a_y));
             // Calculate the direction
-            let direction = if a_x == current_position.0 {
-                if a_y < current_position.1 {
-                    "S"
-                } else {
-                    "N"
-                }
-            } else {
-                if a_x > current_position.0 {
-                    "E"
-                } else {
-                    "W"
-                }
-            };
-
-            let directions = [(0, -1), (0, 1), (-1, 0), (1, 0)];
-            distance = std::i32::MAX;
-            let mut updated = false;
-            let mut new_position = (0, 0);
+            
+            let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+            // distance = std::i32::MAX;
             for &(dx, dy) in &directions {
                 let new_x = current_position.0 + dx;
                 let new_y = current_position.1 + dy;
                 
                 let new_distance = manhattan_distance((new_x, new_y), (a_x, a_y));
-                if distance > new_distance && !store_positions_type.contains_key(&(new_x, new_y)) {
+                if new_distance < min_distance && is_position_ok((new_x, new_y), (width, height)) && is_position_okay_special(&store_positions_type, (new_x, new_y), width, height){
+                    // eprintln!("****************** position {new_x} {new_y}: {:?} protein: {a_x} {a_y}", is_position_okay_special(&store_positions_type, (new_x, new_y), width, height));
                     new_position = (new_x, new_y);
-                    distance = new_distance;
+                    protein_position = (a_x, a_y);
+                    min_distance = new_distance;
                     updated = true;
                 }
             }
-            if updated {
-                if distance == 1 {
-                    harvest = (a_x, a_y);
-                }
-                eprintln!("that is weird {distance} {:?} {:?} {direction}", current_position, new_position);
-                let check_opponent = near_opponent(my_organ_position, store_positions_type, new_position);
-                if check_opponent.0 {
-                    return Some((new_position, distance, check_opponent.1, harvest, check_opponent.0));
-                }
-                return Some((new_position, distance, direction.to_string(), harvest, attack));
-            }
         }
+    }
+    if updated && type_organ.verify("HARVESTER", my_energy) {
+        if min_distance == 1 {
+            harvest = (protein_position.0, protein_position.1);
+        }
+        let direction = if protein_position.0 == new_position.0 {
+            if protein_position.1 < new_position.1 {
+                "N"
+            } else {
+                "S"
+            }
+        } else {
+            if protein_position.0 < new_position.0 {
+                "W"
+            } else {
+                "E"
+            }
+        };
+        // eprintln!("that is weird {min_distance} {:?} {:?} {direction}", current_position, new_position);
+        let check_opponent = near_opponent(my_organ_position,  my_energy, store_positions_type, new_position);
+        if check_opponent.0 {
+            // eprintln!("should not be here in this case");
+            return Some((new_position, check_opponent.2, min_distance, check_opponent.1, harvest, check_opponent.0));
+        }
+        return Some((new_position, current_position, min_distance, direction.to_string(), harvest, attack));
     }
 
     // Fallback to default movement logic if no valid A positions within range
-    if let Some((new_x, new_y)) = find_next_position_to_a(store_positions_type, current_position.0, current_position.1, width, height) {
-        eprintln!("that was the second condition");
-        let check_opponent = near_opponent(my_organ_position, store_positions_type, (new_x, new_y));
+    if let Some((new_x, new_y)) = find_next_position_to_a(store_positions_type, my_organ_position, current_position.0, current_position.1, width, height) {
+        // eprintln!("that was the second condition {new_x} {new_y}");
+        let check_opponent = near_opponent(my_organ_position, my_energy, store_positions_type, (new_x, new_y));
         if check_opponent.0 {
-            return Some(((new_x, new_y), std::i32::MAX, check_opponent.1, harvest, check_opponent.0));
+            return Some(((new_x, new_y), current_position, std::i32::MAX, check_opponent.1, harvest, check_opponent.0));
         }
-        return Some(((new_x, new_y), std::i32::MAX, "".to_string(), harvest, attack));
+        return Some(((new_x, new_y), current_position, std::i32::MAX, "".to_string(), harvest, attack));
     }
 
+    // eprintln!("all my organ positions: {:?} owner {:?}", my_organ_position);
+    // eprintln!("the owner is: {owner}");
     for &(x, y) in my_organ_position.iter() {
-        if let Some((new_x, new_y)) = find_next_position_to_a(store_positions_type, x, y, width, height) {
-            eprintln!("that was the third condition");
-            let check_opponent = near_opponent(my_organ_position, store_positions_type, (new_x, new_y));
-            if check_opponent.0 {
-                return Some(((new_x, new_y), std::i32::MAX, check_opponent.1, harvest, check_opponent.0));
+        if store_organ_owner.contains_key(&(x, y)) && store_organ_owner[&(x, y)] == owner {
+            if let Some((new_x, new_y)) = find_next_position_to_a(store_positions_type, my_organ_position, x, y, width, height) {
+                // eprintln!("that was the third condition");
+                let check_opponent = near_opponent(my_organ_position, my_energy, store_positions_type, (new_x, new_y));
+                if check_opponent.0 {
+                    return Some(((new_x, new_y), (x, y), std::i32::MAX, check_opponent.1, harvest, check_opponent.0));
+                }
+                return Some(((new_x, new_y), (x, y), std::i32::MAX, "".to_string(), harvest, attack));
             }
-            return Some(((new_x, new_y), std::i32::MAX, "".to_string(), harvest, attack));
         }
     }
 
@@ -398,45 +533,97 @@ fn find_next_position_towards_a(
 }
 
 // Existing function to search for "A" positions
-fn search_for_a_positions(store_positions_type: &HashMap<POSITION, String>) -> Vec<POSITION> {
-    let mut a_positions = Vec::new();
+// fn search_for_a_positions(store_positions_type: &HashMap<POSITION, String>) -> Vec<POSITION> {
+//     let mut a_positions = Vec::new();
 
-    // Iterate over the HashMap and find positions where the value is "A"
-    for (&(x, y), value) in store_positions_type.iter() {
-        if value == "A" {
-            a_positions.push((x, y));
+//     // Iterate over the HashMap and find positions where the value is "A"
+//     for (&(x, y), value) in store_positions_type.iter() {
+//         if value == "A" {
+//             a_positions.push((x, y));
+//         }
+//     }
+
+//     a_positions
+// }
+
+fn is_position_okay_special(
+    store_positions_type: &HashMap<POSITION, String>,
+    current_position: POSITION,
+    width: i32,
+    height: i32,
+) -> bool {
+    if width > 15 && height > 6 {
+        if !store_positions_type.contains_key(&(current_position.0, current_position.1)) || (store_positions_type.contains_key(&(current_position.0, current_position.1)) &&
+            (store_positions_type[&(current_position.0, current_position.1)] == "A"
+            ||store_positions_type[&(current_position.0, current_position.1)] == "B"
+            || store_positions_type[&(current_position.0, current_position.1)] == "C"
+            || store_positions_type[&(current_position.0, current_position.1)] == "D")) {
+            return true;
+        } else {
+            return false;
         }
+    } else if !store_positions_type.contains_key(&(current_position.0, current_position.1)) {
+        return true;
     }
-
-    a_positions
+    
+    false
 }
 
 // Existing function to find the next available position to move
 fn find_next_position_to_a(
     store_positions_type: &HashMap<POSITION, String>,
+    my_organ_position: &Vec<POSITION>,
     current_x: i32,
     current_y: i32,
     width: i32,
     height: i32,
 ) -> Option<POSITION> {
-    let directions = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+    let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
 
     // If no "A" positions found, fall back to searching for any available position
     for &(dx, dy) in &directions {
         let new_x = current_x + dx;
         let new_y = current_y + dy;
         let type_val = if let Some(v) = store_positions_type.get(&(new_x, new_y)) {
-            v == "A"
+            (v == "A" || v == "B" || v == "C" || v == "D") && (width < 15 || height < 6)
         } else {
             false
         };
-        eprintln!("the output of new_x: {new_x} and new_y:{new_y}");
-        if new_x >= 0 && new_x < width && new_y >= 0 && new_y < height && !store_positions_type.contains_key(&(new_x, new_y)) && type_val != true {
+        if new_x >= 0 && new_x < width && new_y >= 0 && new_y < height 
+            && is_position_okay_special(&store_positions_type, (new_x, new_y), width, height)
+            && !my_organ_position.contains(&(new_x, new_y)) && type_val != true {
             return Some((new_x, new_y));
         }
     }
 
     None
+}
+
+fn update_energy_temporary(
+    type_organ: &str,
+    my_energy: ENERGY
+) -> ENERGY {
+
+    let mut new_energy = my_energy;
+    if type_organ == "BASIC" {
+        new_energy.0 -= 1;
+    } else if type_organ == "HARVESTER" {
+        new_energy.2 -= 1;
+        new_energy.3 -= 1;
+    } else if type_organ == "TENTACLE" {
+        new_energy.1 -= 1;
+        new_energy.2 -= 1;
+    } else if type_organ == "SPORER" {
+        new_energy.1 -= 1;
+        new_energy.3 -= 1;
+    } else if type_organ == "ROOT" {
+        new_energy.0 -= 1;
+        new_energy.1 -= 1;
+        new_energy.2 -= 1;
+        new_energy.3 -= 1;
+    }
+
+    new_energy
 }
 
 
@@ -447,9 +634,7 @@ fn main() {
     let inputs = input_line.split(" ").collect::<Vec<_>>();
     let width = parse_input!(inputs[0], i32); // columns in the game grid
     let height = parse_input!(inputs[1], i32); // rows in the game grid
-    let mut my_organ_position: Vec<POSITION> = Vec::new();
-    let mut opp_organ_position: Vec<POSITION> = Vec::new();
-
+    
     let mut store_owner_organ: HashMap<POSITION, i32> = HashMap::new();
     let mut actual_positions: HashMap<i32, POSITION> = HashMap::new(); 
     let mut proposed_protein_position: Vec<POSITION> = Vec::new();
@@ -460,6 +645,7 @@ fn main() {
 
     let mut harvesting: Vec<POSITION> = Vec::new();
     let mut new_root: (i32, i32) = ( -1, -1);
+    let mut root_created: bool = false;
 
     loop {
 
@@ -470,6 +656,9 @@ fn main() {
         let mut store_id_with_position: HashMap<POSITION, i32> = HashMap::new();
         let mut my_energy: ENERGY;
         let mut opp_energy: ENERGY;
+        let mut new_position_each_tour: Vec<POSITION> = Vec::new();
+        let mut my_organ_position: Vec<POSITION> = Vec::new();
+        let mut opp_organ_position: Vec<POSITION> = Vec::new();
 
         for _ in 0..entity_count as usize {
             let mut input_line = String::new();
@@ -479,7 +668,6 @@ fn main() {
             let y = parse_input!(inputs[1], i32);
             let _type = inputs[2].trim().to_string();
             let owner = parse_input!(inputs[3], i32);
-
             
             let organ_id = parse_input!(inputs[4], i32);
             let organ_dir = inputs[5].trim().to_string();
@@ -492,7 +680,11 @@ fn main() {
             if owner == 0 {
                 opp_organ_position.push((x, y));
             }
-            if organ_id == organ_parent_id && !actual_positions.contains_key(&organ_id) {
+            if root_created && _type == "ROOT" && owner == 1 && !actual_positions.contains_key(&organ_id) {
+                actual_positions.insert(organ_id, (x, y));
+                root_created = false;
+            }
+            if (organ_id == organ_parent_id && organ_parent_id != 0) && !actual_positions.contains_key(&organ_id) {
                 actual_positions.insert(organ_id, (x, y));
             }
             store_positions_type.insert((x, y), _type);
@@ -502,7 +694,7 @@ fn main() {
         if turn == -1 {
             let root_basic_or_a_positions = search_for_root_basic_or_a_in_owner(&store_positions_type, &store_owner_organ);
             if let Some(&(x, y)) = root_basic_or_a_positions.first() {
-                let id = search_for_organ_id(&store_id_with_position, &my_organ_position, (x, y));
+                let id = search_for_organ_id(&store_id_with_position, (x, y));
                 if !actual_positions.contains_key(&id) {
                     actual_positions.insert(id, (x, y));
                 } else {
@@ -535,76 +727,99 @@ fn main() {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let required_actions_count = parse_input!(input_line, i32);
-        if turn == 0 {
+        if turn == 0  || turn == 1 {
             for (&id, &(target_x, target_y)) in actual_positions.clone().iter() {
-                if is_sporer_needed(&store_positions_type, &my_organ_position, &proposed_protein_position, my_energy) {
-                    eprintln!("was here inside the condition to check sporer!");
-                    sporer_launched.insert(id, false);
+                if is_sporer_needed(&store_positions_type, &my_organ_position, &proposed_protein_position, my_energy, width, height) {
                     sporer_should_be_launched.insert(id, true);
+                    break ;
                 }
             }
             turn += 1;
         }
 
         // for _ in 0..required_actions_count as usize {
-        eprintln!("the positions available: {:?}", actual_positions);
         for (&id, &(target_x, target_y)) in actual_positions.clone().iter() {
+            // eprintln!("the positions available: {:?}", actual_positions);
             // Check if the sporer should be launched
-            eprintln!("how many did it print");
             if sporer_should_be_launched.contains_key(&id) && sporer_should_be_launched[&id] {
-                if let Some(((sporer_x, sporer_y), (organ_x, organ_y), direction)) = sporer_position(&store_positions_type,&my_organ_position, &proposed_protein_position) {
-                    let id_2 = search_for_organ_id(&store_id_with_position, &my_organ_position, (organ_x, organ_y));
-                    new_root = (sporer_x, sporer_y);
-                    sporer_position_id.insert((organ_x, organ_y), id_2);
-                    eprintln!("the position sporer: x: {sporer_x} y : {sporer_y}, for organ: x {organ_x} y :{organ_y}");
-                    // actual_positions.entry(id).and_modify(|val| { val.0 = organ_x; val.1 = organ_y; }).or_insert((organ_x, organ_y));
-                    actual_positions.remove(&id);
-                    actual_positions.insert(id_2, (organ_x, organ_y));
-
-                    sporer_launched.entry(id).and_modify(|val: &mut bool| { *val = true;}).or_insert(true);
-                    eprintln!("before removing the id: {:?}", sporer_should_be_launched);
-                    sporer_should_be_launched.remove(&id);
-                    eprintln!("after removing the id: {:?}", sporer_should_be_launched);
-                    println!("GROW {} {} {} SPORER {}", id_2, organ_x, organ_y, direction);
-                    // println!("SPORE {} {} {}", id_2, new_root.0, new_root.1);
+                if let Some(((sporer_x, sporer_y), (organ_x, organ_y), (my_position_x, my_position_y),  direction)) = sporer_position(&store_positions_type,&my_organ_position, &proposed_protein_position, my_energy, width, height) {
+                    // eprintln!("1 inside the condition positions are: new: {:?} positions: {:?}", (sporer_x, sporer_y), (organ_x, organ_y));
+                    let id_2 = search_for_organ_id(&store_id_with_position, (my_position_x, my_position_y));
+                    if !my_organ_position.contains(&(my_position_x, my_position_y)) || new_position_each_tour.contains(&(my_position_x, my_position_y)) || id_2 == -1{
+                        println!("WAIT");
+                    }
+                    else {
+                        new_root = (sporer_x, sporer_y);
+                        sporer_position_id.insert((organ_x, organ_y), id_2);
+                        actual_positions.remove(&id);
+                        actual_positions.insert(id_2, (organ_x, organ_y));
+                        new_position_each_tour.push((my_position_x, my_position_y));
+    
+                        sporer_should_be_launched.remove(&id);
+                        sporer_launched.insert(id, true);
+                        my_energy = update_energy_temporary("SPORER", my_energy);
+                        println!("GROW {} {} {} SPORER {}", id_2, organ_x, organ_y, direction);
+                    }
+                } else {
+                    println!("WAIT");
                 }
             }
             else if  sporer_launched.contains_key(&id) && sporer_launched[&id] && sporer_position_id.contains_key(&(target_x, target_y)) {
-                let id_2 = search_for_organ_id(&store_id_with_position, &my_organ_position, (target_x, target_y));
-                println!("SPORE {} {} {}", id_2, new_root.0, new_root.1);
-                sporer_position_id.clear();
-                sporer_launched.remove(&id);
+                let id_2 = search_for_organ_id(&store_id_with_position, (target_x, target_y));
+                if !my_organ_position.contains(&(target_x, target_y)) || id_2 == -1 {
+                    println!("WAIT");
+                } else {
+                    my_energy = update_energy_temporary("ROOT", my_energy);
+                    println!("SPORE {} {} {}", id_2, new_root.0, new_root.1);
+                    sporer_position_id.clear();
+                    root_created = true;
+                    sporer_launched.remove(&id);
+                }
             }
-            else if let Some(((new_x, new_y), distance, direction, harvest, attack)) = find_next_position_towards_a(
+            else if let Some(((new_x, new_y), (my_position_x, my_position_y), distance, direction, harvest, attack)) = find_next_position_towards_a(
                 &my_organ_position,
+                &opp_organ_position,
+                &store_owner_organ,
                 &store_positions_type,
                 &proposed_protein_position,
+                my_energy,
                 harvesting.clone(),
                 (target_x, target_y),
-                5,
+                15,
                 width,
                 height,
             ) {
-                let id_2 = search_for_organ_id(&store_id_with_position, &my_organ_position, (target_x, target_y));
-                if attack {
-                    // It will throw an TENTACLE command to attack nearbe
-                    // actual_positions.entry(id).and_modify(|val| { val.0 = new_x; val.1 = new_y; }).or_insert((new_x, new_y));
-                    actual_positions.remove(&id);
-                    actual_positions.insert(id_2, (new_x, new_y));
-                    println!("GROW {} {} {} TENTACLE {}", id_2, new_x, new_y, direction);
-                }
-                else if distance == 1 {
-                    // Print special grow command when near "A"
-                    // actual_positions.entry(id).and_modify(|val| { val.0 = new_x; val.1 = new_y; }).or_insert((new_x, new_y));
-                    actual_positions.remove(&id);
-                    actual_positions.insert(id_2, (new_x, new_y));
-                    harvesting.push(harvest);
-                    println!("GROW {} {} {} HARVESTER {}", id_2, new_x, new_y, direction);
+                // eprintln!("2 inside the condition positions are: new: {:?} positions: {:?}", (new_x, new_y), (my_position_x, my_position_y));
+                let type_organ: OrganType = OrganType::BASIC;
+                let id_2 = search_for_organ_id(&store_id_with_position, (my_position_x, my_position_y));
+                if !my_organ_position.contains(&(my_position_x, my_position_y)) || new_position_each_tour.contains(&(new_x, new_y)) || id_2 == -1 {
+                    println!("WAIT");
                 } else {
-                    // actual_positions.entry(id).and_modify(|val| { val.0 = new_x; val.1 = new_y; }).or_insert((new_x, new_y));
-                    actual_positions.remove(&id);
-                    actual_positions.insert(id_2, (new_x, new_y));
-                    println!("GROW {} {} {} BASIC", id_2, new_x, new_y);
+                    if attack {
+                        // It will throw an TENTACLE command to attack nearbe
+                        new_position_each_tour.push((new_x, new_y));
+                        actual_positions.remove(&id);
+                        actual_positions.insert(id_2, (new_x, new_y));
+                        my_energy = update_energy_temporary("TENTACLE", my_energy);
+                        println!("GROW {} {} {} TENTACLE {}", id_2, new_x, new_y, direction);
+                    }
+                    else if distance == 1 {
+                        // Print special grow command when near "A"
+                        new_position_each_tour.push((new_x, new_y));
+                        actual_positions.remove(&id);
+                        actual_positions.insert(id_2, (new_x, new_y));
+                        harvesting.push(harvest);
+                        my_energy = update_energy_temporary("HARVESTER", my_energy);
+                        println!("GROW {} {} {} HARVESTER {}", id_2, new_x, new_y, direction);
+                    } else if type_organ.verify("BASIC", my_energy) {
+                        new_position_each_tour.push((new_x, new_y));
+                        actual_positions.remove(&id);
+                        actual_positions.insert(id_2, (new_x, new_y));
+                        my_energy = update_energy_temporary("GROW", my_energy);
+                        println!("GROW {} {} {} BASIC", id_2, new_x, new_y);
+                    } else {
+                        println!("WAIT");
+                    }
                 }
             } else {
                 println!("WAIT");
