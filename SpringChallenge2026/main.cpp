@@ -30,7 +30,9 @@ enum class Terrain : uint8_t {
     GRASS,
     SHACK_OWN,
     SHACK_OPP,
-    // Reserved for future leagues: WATER, FOREST, ROCK, ...
+    WATER,
+    ROCK,
+    IRON_ORE,   // mined via MINE when adjacent; not walkable.
 };
 
 enum class FruitType : uint8_t {
@@ -48,7 +50,7 @@ constexpr int RES_COUNT = 6;
 enum class ActionKind : uint8_t {
     MOVE, HARVEST, DROP, WAIT, MSG,
     PLANT, PICK, TRAIN,
-    // Future: CHOP
+    CHOP, MINE,
 };
 
 static const char* fruitName(FruitType f) {
@@ -138,6 +140,8 @@ struct Action {
     static Action Msg(const string& m)           { Action a; a.kind=ActionKind::MSG;     a.msg=m; return a; }
     static Action Plant(int id, FruitType f)     { Action a; a.kind=ActionKind::PLANT;   a.trollId=id; a.fruit=f; return a; }
     static Action Pick(int id, FruitType f)      { Action a; a.kind=ActionKind::PICK;    a.trollId=id; a.fruit=f; return a; }
+    static Action Chop(int id)                   { Action a; a.kind=ActionKind::CHOP;    a.trollId=id; return a; }
+    static Action Mine(int id)                   { Action a; a.kind=ActionKind::MINE;    a.trollId=id; return a; }
     static Action Train(int mv, int cap, int hv, int ch) {
         Action a; a.kind=ActionKind::TRAIN;
         a.trainAttrs[0]=mv; a.trainAttrs[1]=cap; a.trainAttrs[2]=hv; a.trainAttrs[3]=ch;
@@ -154,6 +158,8 @@ struct Action {
             case ActionKind::MSG:     os << "MSG "     << msg; break;
             case ActionKind::PLANT:   os << "PLANT "   << trollId << ' ' << fruitName(fruit); break;
             case ActionKind::PICK:    os << "PICK "    << trollId << ' ' << fruitName(fruit); break;
+            case ActionKind::CHOP:    os << "CHOP "    << trollId; break;
+            case ActionKind::MINE:    os << "MINE "    << trollId; break;
             case ActionKind::TRAIN:   os << "TRAIN "
                                          << trainAttrs[0] << ' ' << trainAttrs[1] << ' '
                                          << trainAttrs[2] << ' ' << trainAttrs[3]; break;
@@ -171,8 +177,15 @@ static void readInitial(GameState& gs) {
         for (int x = 0; x < gs.map.w; x++) {
             char c = line[x];
             Terrain t = Terrain::GRASS;
-            if (c == '0')      { t = Terrain::SHACK_OWN; gs.shackPos[0][0]=x; gs.shackPos[0][1]=y; }
-            else if (c == '1') { t = Terrain::SHACK_OPP; gs.shackPos[1][0]=x; gs.shackPos[1][1]=y; }
+            switch (c) {
+                case '.': t = Terrain::GRASS; break;
+                case '~': t = Terrain::WATER; break;
+                case '#': t = Terrain::ROCK; break;
+                case '+': t = Terrain::IRON_ORE; break;
+                case '0': t = Terrain::SHACK_OWN; gs.shackPos[0][0]=x; gs.shackPos[0][1]=y; break;
+                case '1': t = Terrain::SHACK_OPP; gs.shackPos[1][0]=x; gs.shackPos[1][1]=y; break;
+                default:  t = Terrain::GRASS; break;  // unknown → treat as grass
+            }
             gs.map.set(x, y, t);
         }
     }
@@ -263,9 +276,10 @@ static PathInfo bfs(const GridMap& m, int sx, int sy,
     return p;
 }
 
-// Default walkability for Wood 2: only GRASS is walkable. Shacks block.
-// (Trees sit on grass and don't block movement.)
-static auto defaultWalkable(const GridMap& m) {
+// Plain grass-only walkability. Useful as a base predicate for strategies or
+// pathfinding tests that don't care about dynamic blockers (trolls, reserved
+// cells). Kept for forward-compatibility.
+[[maybe_unused]] static auto defaultWalkable(const GridMap& m) {
     return [&m](int x, int y) {
         return m.at(x, y) == Terrain::GRASS;
     };
@@ -296,9 +310,20 @@ struct GreedyStrategy : IStrategy {
     vector<Action> decide(const GameState& gs) override {
         vector<Action> out;
 
-        auto walk = defaultWalkable(gs.map);
+        const int W = gs.map.w;
+        const int H = gs.map.h;
         const int myShackX = gs.shackPos[0][0];
         const int myShackY = gs.shackPos[0][1];
+
+        // Ally trolls block each other ("1 troll per team per cell"). Build a
+        // mask of cells currently occupied by any of MY trolls. Each troll's
+        // BFS will treat these as blocked, except for the troll's own cell.
+        vector<char> blockedByAlly(W*H, 0);
+        for (const auto& tr : gs.trolls) {
+            if (tr.owner == 0) blockedByAlly[tr.y*W + tr.x] = 1;
+        }
+        // Tree cells reserved this turn — claimed by an earlier troll.
+        vector<char> reservedCell(W*H, 0);
 
         // Priority 0: train a second troll on turn 0.
         // Cost with N existing trolls and attribute a: N + a^2 fruits of that type.
@@ -356,18 +381,29 @@ struct GreedyStrategy : IStrategy {
                 continue;
             }
 
-            // Priority 4: walk to nearest fruit-bearing tree
+            // Priority 4: walk to nearest fruit-bearing tree.
+            // Walkable predicate: grass cells only, not occupied by other
+            // ally trolls, not reserved by an earlier troll's choice this turn.
             if (anyFruit) {
+                auto walk = [&](int x, int y) -> bool {
+                    if (gs.map.at(x, y) != Terrain::GRASS) return false;
+                    const int idx = y*W + x;
+                    if (reservedCell[idx]) return false;
+                    if (blockedByAlly[idx] && !(x == t.x && y == t.y)) return false;
+                    return true;
+                };
                 PathInfo p = bfs(gs.map, t.x, t.y, walk);
                 const Tree* best = nullptr;
                 int bestDist = INT32_MAX;
                 for (const auto& tr : gs.trees) {
                     if (tr.fruits <= 0) continue;
+                    if (reservedCell[tr.y*W + tr.x]) continue;
                     int d = p.at(tr.x, tr.y);
                     if (d < 0) continue;            // unreachable
                     if (d < bestDist) { bestDist = d; best = &tr; }
                 }
                 if (best) {
+                    reservedCell[best->y*W + best->x] = 1;
                     out.push_back(Action::Move(t.id, best->x, best->y));
                     continue;
                 }
