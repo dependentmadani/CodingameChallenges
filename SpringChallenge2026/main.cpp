@@ -299,12 +299,17 @@ struct IStrategy {
 };
 
 // GreedyStrategy: priority-rule controller. Per-team priorities:
-//   0. (Turn 0 only) TRAIN a min-stat 2nd troll if affordable — matches boss opener.
+//   0. (Turn 0 only) TRAIN a 2nd troll with as much chopPower as iron allows
+//      (chop=2 if >=5 iron, chop=1 if >=2 iron, else chop=0 fallback). Each
+//      wood scores 4× a fruit, so chop investment dominates harvest at Bronze.
 // For each owned troll:
-//   1. DROP if carrying fruit AND 4-adjacent to my shack.
-//   2. HARVEST if standing on a tree with fruits AND free capacity.
-//   3. MOVE to shack if full OR no fruits available anywhere on the map.
-//   4. MOVE to nearest BFS-reachable tree with fruits > 0.
+//   1. DROP if carrying anything AND 4-adjacent to my shack.
+//   2a. HARVEST if on tree with fruits AND harvestPower>0 AND free capacity.
+//   2b. CHOP if on tree with HP>0 AND chopPower>0.
+//   3. MOVE to shack if full OR no useful target on the map.
+//   4. MOVE to best target:
+//        if chopPower>0:    nearest BFS-reachable tree with HP>0
+//        else (harvester):  nearest BFS-reachable tree with fruits>0
 //   5. WAIT (only when nothing else applies).
 struct GreedyStrategy : IStrategy {
     vector<Action> decide(const GameState& gs) override {
@@ -334,17 +339,37 @@ struct GreedyStrategy : IStrategy {
 
         if (gs.turn == 0 && myTrollCount == 1) {
             const int N = myTrollCount;
-            const int cP = N + 1*1;
-            const int cL = N + 1*1;
-            const int cA = N + 1*1;
-            if (gs.shack[0][ResourceType::PLUM]  >= cP &&
-                gs.shack[0][ResourceType::LEMON] >= cL &&
-                gs.shack[0][ResourceType::APPLE] >= cA) {
-                out.push_back(Action::Train(1, 1, 1, 0));
-                out.push_back(Action::Msg("train min troll"));
-                DBG("strategy: emit TRAIN 1 1 1 0 (cost " << cP << "P+" << cL << "L+" << cA << "A)");
+            // Pick best chop attribute we can afford from current iron.
+            // Cost for chop=c with N existing = N + c² iron.
+            //   c=2: 5 iron (N=1)
+            //   c=1: 2 iron
+            //   c=0: 1 iron (still N + 0² = 1)
+            // We also need 2 plums, 2 lemons, 2 apples for move=cap=harv=1.
+            const int havePlum  = gs.shack[0][ResourceType::PLUM];
+            const int haveLemon = gs.shack[0][ResourceType::LEMON];
+            const int haveApple = gs.shack[0][ResourceType::APPLE];
+            const int haveIron  = gs.shack[0][ResourceType::IRON];
+            const int cP = N + 1, cL = N + 1, cA = N + 1;
+
+            int chopChoice = -1;
+            int ironCost = 0;
+            if      (haveIron >= N + 4) { chopChoice = 2; ironCost = N + 4; }
+            else if (haveIron >= N + 1) { chopChoice = 1; ironCost = N + 1; }
+            else if (haveIron >= N)     { chopChoice = 0; ironCost = N;     }
+
+            if (chopChoice >= 0 &&
+                havePlum  >= cP &&
+                haveLemon >= cL &&
+                haveApple >= cA) {
+                out.push_back(Action::Train(1, 1, 1, chopChoice));
+                ostringstream m; m << "train chop=" << chopChoice;
+                out.push_back(Action::Msg(m.str()));
+                DBG("strategy: emit TRAIN 1 1 1 " << chopChoice
+                    << " (cost " << cP << "P+" << cL << "L+" << cA << "A+" << ironCost << "I)");
             } else {
-                DBG("strategy: skip TRAIN, insufficient fruits");
+                DBG("strategy: skip TRAIN, insufficient resources"
+                    << " (P=" << havePlum << " L=" << haveLemon
+                    << " A=" << haveApple << " I=" << haveIron << ")");
             }
         }
 
@@ -365,48 +390,75 @@ struct GreedyStrategy : IStrategy {
                 continue;
             }
 
-            // Priority 2: harvest in place
+            // Priority 2: act on tree at current cell.
             const Tree* hereTree = nullptr;
             for (const auto& tr : gs.trees) {
                 if (tr.x == t.x && tr.y == t.y) { hereTree = &tr; break; }
             }
-            if (hereTree && hereTree->fruits > 0 && freeCap > 0) {
+            // 2a: harvest first (free +1pt/fruit before chopping abandons them)
+            if (hereTree && hereTree->fruits > 0 && t.harvest > 0 && freeCap > 0) {
                 out.push_back(Action::Harvest(t.id));
                 continue;
             }
+            // 2b: chop the tree down for wood (4pt per wood)
+            if (hereTree && hereTree->health > 0 && t.chop > 0) {
+                out.push_back(Action::Chop(t.id));
+                continue;
+            }
 
-            // Priority 3: head to shack if full or nothing to harvest
-            if (freeCap == 0 || (!anyFruit && carried > 0)) {
+            // What does this troll do for a living?
+            const bool isChopper   = t.chop    > 0;
+            const bool isHarvester = t.harvest > 0;
+
+            // Is there any chopable / harvestable target left on the map?
+            bool anyChop = false;
+            for (const auto& tr : gs.trees) if (tr.health > 0) { anyChop = true; break; }
+
+            // Priority 3: head to shack if full or no useful target for our role.
+            const bool nothingToDo =
+                (isChopper && !anyChop) ||
+                (!isChopper && isHarvester && !anyFruit) ||
+                (!isChopper && !isHarvester);
+            if (freeCap == 0 || (carried > 0 && nothingToDo)) {
                 out.push_back(Action::Move(t.id, myShackX, myShackY));
                 continue;
             }
 
-            // Priority 4: walk to nearest fruit-bearing tree.
+            // Priority 4: walk to best target tree.
             // Walkable predicate: grass cells only, not occupied by other
             // ally trolls, not reserved by an earlier troll's choice this turn.
-            if (anyFruit) {
-                auto walk = [&](int x, int y) -> bool {
-                    if (gs.map.at(x, y) != Terrain::GRASS) return false;
-                    const int idx = y*W + x;
-                    if (reservedCell[idx]) return false;
-                    if (blockedByAlly[idx] && !(x == t.x && y == t.y)) return false;
-                    return true;
-                };
-                PathInfo p = bfs(gs.map, t.x, t.y, walk);
-                const Tree* best = nullptr;
-                int bestDist = INT32_MAX;
-                for (const auto& tr : gs.trees) {
+            auto walk = [&](int x, int y) -> bool {
+                if (gs.map.at(x, y) != Terrain::GRASS) return false;
+                const int idx = y*W + x;
+                if (reservedCell[idx]) return false;
+                if (blockedByAlly[idx] && !(x == t.x && y == t.y)) return false;
+                return true;
+            };
+            PathInfo p = bfs(gs.map, t.x, t.y, walk);
+
+            const Tree* best = nullptr;
+            int bestKey = INT32_MAX;
+            for (const auto& tr : gs.trees) {
+                if (reservedCell[tr.y*W + tr.x]) continue;
+                int d = p.at(tr.x, tr.y);
+                if (d < 0) continue;
+                int key;
+                if (isChopper) {
+                    if (tr.health <= 0) continue;
+                    // Primary: BFS distance. Tiebreak: low HP (faster wood).
+                    key = d * 1024 + tr.health;
+                } else if (isHarvester) {
                     if (tr.fruits <= 0) continue;
-                    if (reservedCell[tr.y*W + tr.x]) continue;
-                    int d = p.at(tr.x, tr.y);
-                    if (d < 0) continue;            // unreachable
-                    if (d < bestDist) { bestDist = d; best = &tr; }
-                }
-                if (best) {
-                    reservedCell[best->y*W + best->x] = 1;
-                    out.push_back(Action::Move(t.id, best->x, best->y));
+                    key = d * 1024;
+                } else {
                     continue;
                 }
+                if (key < bestKey) { bestKey = key; best = &tr; }
+            }
+            if (best) {
+                reservedCell[best->y*W + best->x] = 1;
+                out.push_back(Action::Move(t.id, best->x, best->y));
+                continue;
             }
 
             // Priority 5: nothing useful
