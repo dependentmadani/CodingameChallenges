@@ -1853,6 +1853,364 @@ struct Simulator {
 };
 
 // =============================================================
+// Layer 7 — Macro Actions (Phase B2)
+// =============================================================
+//
+// A MacroAction is a multi-turn intention: "walk to (x,y) and then
+// HARVEST/CHOP/PLANT/PICK/DROP/MINE", plus the two team-level
+// primitives TRAIN and WAIT. Each macro emits one primitive Action
+// per turn until completion.
+//
+// The macro layer is additive — FarmStrategy keeps running as the
+// live brain. These types feed the DUCT-MCTS search landing in B3.
+
+enum class MacroKind : uint8_t {
+    NONE,
+    MOVE_AND_HARVEST,   // walk to (x,y) then HARVEST once
+    MOVE_AND_CHOP,      // walk to (x,y) then CHOP until the tree dies
+    MOVE_AND_PLANT,     // walk to (x,y) then PLANT `fruit` (consumed from carry)
+    MOVE_AND_PICK,      // walk to (x,y) [adj-shack] then PICK `fruit` from shack
+    MOVE_AND_DROP,      // walk to (x,y) [adj-shack] then DROP all carry
+    MOVE_AND_MINE,      // walk to (x,y) [adj-iron] then MINE once
+    PRIM_TRAIN,         // team-level — no troll, no movement
+    PRIM_WAIT,          // primitive WAIT (a single no-op turn)
+};
+
+struct MacroAction {
+    MacroKind kind = MacroKind::NONE;
+    int trollId = -1;
+    int x = 0, y = 0;
+    FruitType fruit = FruitType::PLUM;
+    int trainAttrs[4] = {0, 0, 0, 0};  // mv, cap, hv, ch — for PRIM_TRAIN
+    bool finished = false;
+    int stepsTaken = 0;
+
+    // Factory functions ------------------------------------------------
+    static MacroAction MoveAndHarvest(int id, int x, int y) {
+        MacroAction m; m.kind = MacroKind::MOVE_AND_HARVEST;
+        m.trollId = id; m.x = x; m.y = y; return m;
+    }
+    static MacroAction MoveAndChop(int id, int x, int y) {
+        MacroAction m; m.kind = MacroKind::MOVE_AND_CHOP;
+        m.trollId = id; m.x = x; m.y = y; return m;
+    }
+    static MacroAction MoveAndPlant(int id, int x, int y, FruitType f) {
+        MacroAction m; m.kind = MacroKind::MOVE_AND_PLANT;
+        m.trollId = id; m.x = x; m.y = y; m.fruit = f; return m;
+    }
+    static MacroAction MoveAndPick(int id, int x, int y, FruitType f) {
+        MacroAction m; m.kind = MacroKind::MOVE_AND_PICK;
+        m.trollId = id; m.x = x; m.y = y; m.fruit = f; return m;
+    }
+    static MacroAction MoveAndDrop(int id, int x, int y) {
+        MacroAction m; m.kind = MacroKind::MOVE_AND_DROP;
+        m.trollId = id; m.x = x; m.y = y; return m;
+    }
+    static MacroAction MoveAndMine(int id, int x, int y) {
+        MacroAction m; m.kind = MacroKind::MOVE_AND_MINE;
+        m.trollId = id; m.x = x; m.y = y; return m;
+    }
+    static MacroAction Train(int mv, int cap, int hv, int ch) {
+        MacroAction m; m.kind = MacroKind::PRIM_TRAIN;
+        m.trainAttrs[0] = mv; m.trainAttrs[1] = cap;
+        m.trainAttrs[2] = hv; m.trainAttrs[3] = ch; return m;
+    }
+    static MacroAction Wait() {
+        MacroAction m; m.kind = MacroKind::PRIM_WAIT; return m;
+    }
+};
+
+// Safety cap on how many primitives a single macro will emit before
+// being forced to finish. Sized to accommodate a MOVE_AND_CHOP of a
+// max-HP tree at chop=1 plus the walk to it.
+[[maybe_unused]] constexpr int kMaxMacroTurns = 40;
+
+// Emit one primitive Action for this macro this turn. Marks `finished`
+// for all kinds EXCEPT MOVE_AND_CHOP, which is finalized in stepMacros
+// after the Simulator step (we can only confirm tree death post-step).
+[[maybe_unused]] static Action macroPrimitive(const GameState& gs, MacroAction& m) {
+    if (m.finished) return Action::Wait();  // defensive
+
+    if (m.kind == MacroKind::PRIM_TRAIN) {
+        m.finished = true;
+        return Action::Train(m.trainAttrs[0], m.trainAttrs[1],
+                             m.trainAttrs[2], m.trainAttrs[3]);
+    }
+    if (m.kind == MacroKind::PRIM_WAIT) {
+        m.finished = true;
+        return Action::Wait();
+    }
+
+    int idx = trollIndexById(gs, m.trollId);
+    if (idx < 0) { m.finished = true; return Action::Wait(); }
+    const Troll& t = gs.trolls[idx];
+
+    // Still in transit — emit MOVE toward target. The simulator's MOVE
+    // handler steps the troll up to movSpeed cells along a BFS-optimal
+    // path. We keep emitting the same target each turn until arrival.
+    if (t.x != m.x || t.y != m.y) {
+        return Action::Move(m.trollId, m.x, m.y);
+    }
+
+    // At target — emit terminal primitive.
+    switch (m.kind) {
+        case MacroKind::MOVE_AND_HARVEST:
+            m.finished = true;
+            return Action::Harvest(m.trollId);
+        case MacroKind::MOVE_AND_CHOP:
+            // Don't mark finished here — wait for post-step tree check.
+            return Action::Chop(m.trollId);
+        case MacroKind::MOVE_AND_PLANT:
+            m.finished = true;
+            return Action::Plant(m.trollId, m.fruit);
+        case MacroKind::MOVE_AND_PICK:
+            m.finished = true;
+            return Action::Pick(m.trollId, m.fruit);
+        case MacroKind::MOVE_AND_DROP:
+            m.finished = true;
+            return Action::Drop(m.trollId);
+        case MacroKind::MOVE_AND_MINE:
+            m.finished = true;
+            return Action::Mine(m.trollId);
+        default:
+            m.finished = true;
+            return Action::Wait();
+    }
+}
+
+// Step the simulator under a set of macros (both sides), looping until
+// AT LEAST ONE macro that was active at entry has just finished. This
+// is the MCTS search granularity: every node in the tree corresponds
+// to a fresh joint-macro decision, so we stop as soon as one decision
+// completes.
+//
+// Pre-check: a MOVE_AND_CHOP whose target tree is already gone
+// finishes immediately. Same applies to PLANT/PICK/DROP/MINE if the
+// pre-conditions can't be met, but those edge cases are rare and
+// handled by the Simulator silently no-op-ing.
+//
+// Returns the new state; macros are mutated in-place to reflect their
+// completion status (`finished = true` for done).
+[[maybe_unused]] static GameState stepMacros(GameState gs,
+                                             vector<MacroAction>& myMacros,
+                                             vector<MacroAction>& oppMacros) {
+    // Pre-check: dead-tree MOVE_AND_CHOP. The Simulator wouldn't
+    // crash on this — chop on no-tree is a no-op — but marking
+    // finished early lets the search recognise that this macro can't
+    // make progress, so it doesn't waste a search depth on it.
+    auto markDeadChops = [&](vector<MacroAction>& macros) {
+        for (auto& m : macros) {
+            if (m.kind != MacroKind::MOVE_AND_CHOP || m.finished) continue;
+            bool alive = false;
+            for (const auto& tr : gs.trees) {
+                if (tr.x == m.x && tr.y == m.y && tr.health > 0) {
+                    alive = true; break;
+                }
+            }
+            if (!alive) m.finished = true;
+        }
+    };
+    markDeadChops(myMacros);
+    markDeadChops(oppMacros);
+
+    // Snapshot which macros were active at entry. We stop as soon as
+    // any of those becomes finished — pre-finished ones don't count.
+    const int Nm = (int)myMacros.size();
+    const int No = (int)oppMacros.size();
+    vector<bool> myActiveAtEntry(Nm), oppActiveAtEntry(No);
+    for (int i = 0; i < Nm; i++) myActiveAtEntry[i] = !myMacros[i].finished;
+    for (int i = 0; i < No; i++) oppActiveAtEntry[i] = !oppMacros[i].finished;
+
+    // If nothing was active to begin with, advance one turn with an
+    // empty action set so the simulator still ticks (tree growth etc.).
+    bool anyActive = false;
+    for (int i = 0; i < Nm; i++) if (myActiveAtEntry[i]) { anyActive = true; break; }
+    if (!anyActive)
+        for (int i = 0; i < No; i++) if (oppActiveAtEntry[i]) { anyActive = true; break; }
+    if (!anyActive) {
+        return Simulator::step(gs, {}, {});
+    }
+
+    for (int turn = 0; turn < kMaxMacroTurns; turn++) {
+        // Build per-side primitive lists from currently-unfinished macros.
+        vector<Action> myPrim, oppPrim;
+        myPrim.reserve(Nm);
+        oppPrim.reserve(No);
+        for (auto& m : myMacros) {
+            if (m.finished) continue;
+            m.stepsTaken++;
+            if (m.stepsTaken >= kMaxMacroTurns) {
+                m.finished = true;
+                continue;
+            }
+            myPrim.push_back(macroPrimitive(gs, m));
+        }
+        for (auto& m : oppMacros) {
+            if (m.finished) continue;
+            m.stepsTaken++;
+            if (m.stepsTaken >= kMaxMacroTurns) {
+                m.finished = true;
+                continue;
+            }
+            oppPrim.push_back(macroPrimitive(gs, m));
+        }
+
+        // Advance one game turn.
+        gs = Simulator::step(gs, myPrim, oppPrim);
+
+        // Post-step: finalize MOVE_AND_CHOP based on tree state.
+        auto finalizeChops = [&](vector<MacroAction>& macros) {
+            for (auto& m : macros) {
+                if (m.finished || m.kind != MacroKind::MOVE_AND_CHOP) continue;
+                bool alive = false;
+                for (const auto& tr : gs.trees) {
+                    if (tr.x == m.x && tr.y == m.y && tr.health > 0) {
+                        alive = true; break;
+                    }
+                }
+                if (!alive) m.finished = true;
+            }
+        };
+        finalizeChops(myMacros);
+        finalizeChops(oppMacros);
+
+        // Stop as soon as any macro that was active at entry has finished.
+        bool anyDone = false;
+        for (int i = 0; i < Nm && !anyDone; i++)
+            if (myActiveAtEntry[i] && myMacros[i].finished) anyDone = true;
+        for (int i = 0; i < No && !anyDone; i++)
+            if (oppActiveAtEntry[i] && oppMacros[i].finished) anyDone = true;
+        if (anyDone) return gs;
+    }
+
+    return gs;
+}
+
+// Generate a candidate macro list for one troll on the current state.
+// This is the seed set for MCTS expansion — the search picks one of
+// these as the troll's commitment for the next macro block.
+//
+// Lean baseline: emits the obvious moves per role. We'll refine in
+// B3 to mirror the rival's per-phase prioritisation (chop fodder
+// PICK order, etc.). For now this is enough to exercise the macro
+// pipeline end-to-end in tests.
+[[maybe_unused]] static vector<MacroAction> generateTrollMacroActions(
+    const GameState& gs, const Troll& t)
+{
+    vector<MacroAction> out;
+    const int sx = gs.shackPos[t.owner][0];
+    const int sy = gs.shackPos[t.owner][1];
+    const int free = t.carryCap - t.carry.total();
+
+    // MOVE_AND_HARVEST — nearest tree of each fruit type with fruits.
+    if (t.harvest > 0 && free > 0) {
+        for (int f = 0; f < FRUIT_COUNT; f++) {
+            int bestD = -1, bestIdx = -1;
+            for (size_t i = 0; i < gs.trees.size(); i++) {
+                const Tree& tr = gs.trees[i];
+                if ((int)tr.type != f) continue;
+                if (tr.fruits <= 0) continue;
+                int d = g_lookupsReady
+                    ? bfs_dist_lookup[sy][sx][tr.y][tr.x]
+                    : manhattan(sx, sy, tr.x, tr.y);
+                if (d < 0) continue;
+                if (bestD == -1 || d < bestD) { bestD = d; bestIdx = (int)i; }
+            }
+            if (bestIdx >= 0) {
+                out.push_back(MacroAction::MoveAndHarvest(
+                    t.id, gs.trees[bestIdx].x, gs.trees[bestIdx].y));
+            }
+        }
+    }
+
+    // MOVE_AND_CHOP — nearest live tree (any type).
+    if (t.chop > 0 && free > 0) {
+        int bestD = -1, bestIdx = -1;
+        for (size_t i = 0; i < gs.trees.size(); i++) {
+            const Tree& tr = gs.trees[i];
+            if (tr.health <= 0) continue;
+            int d = g_lookupsReady
+                ? bfs_dist_lookup[t.y][t.x][tr.y][tr.x]
+                : manhattan(t.x, t.y, tr.x, tr.y);
+            if (d < 0) continue;
+            if (bestD == -1 || d < bestD) { bestD = d; bestIdx = (int)i; }
+        }
+        if (bestIdx >= 0) {
+            out.push_back(MacroAction::MoveAndChop(
+                t.id, gs.trees[bestIdx].x, gs.trees[bestIdx].y));
+        }
+    }
+
+    // MOVE_AND_PLANT — for each fruit carried, nearest free plantable
+    // cell (BFS dist ≤ 2 of own shack, no tree on it).
+    if (g_lookupsReady && (t.carry.r[0] > 0 || t.carry.r[1] > 0
+                        || t.carry.r[2] > 0 || t.carry.r[3] > 0)) {
+        int bestD = -1, bestX = -1, bestY = -1;
+        for (const auto& [cx, cy] : plantableCellsAroundShack[t.owner]) {
+            // skip occupied cells
+            bool occupied = false;
+            for (const auto& tr : gs.trees) {
+                if (tr.x == cx && tr.y == cy) { occupied = true; break; }
+            }
+            if (occupied) continue;
+            int d = bfs_dist_lookup[t.y][t.x][cy][cx];
+            if (d < 0) continue;
+            if (bestD == -1 || d < bestD) { bestD = d; bestX = cx; bestY = cy; }
+        }
+        if (bestX >= 0) {
+            for (int f = 0; f < FRUIT_COUNT; f++) {
+                if (t.carry.r[f] > 0)
+                    out.push_back(MacroAction::MoveAndPlant(
+                        t.id, bestX, bestY, (FruitType)f));
+            }
+        }
+    }
+
+    // MOVE_AND_PICK / MOVE_AND_DROP — nearest shack-adjacent walkable cell.
+    if (g_lookupsReady) {
+        int bestD = -1, bestX = -1, bestY = -1;
+        for (const auto& [cx, cy] : shackAdjCells[t.owner]) {
+            int d = bfs_dist_lookup[t.y][t.x][cy][cx];
+            if (d < 0) continue;
+            if (bestD == -1 || d < bestD) { bestD = d; bestX = cx; bestY = cy; }
+        }
+        if (bestX >= 0) {
+            // PICK: only if empty-handed and shack has the fruit.
+            if (t.carry.total() == 0) {
+                for (int f = 0; f < FRUIT_COUNT; f++) {
+                    if (gs.shack[t.owner].r[f] > 0)
+                        out.push_back(MacroAction::MoveAndPick(
+                            t.id, bestX, bestY, (FruitType)f));
+                }
+            }
+            // DROP: only if carrying something.
+            if (t.carry.total() > 0)
+                out.push_back(MacroAction::MoveAndDrop(t.id, bestX, bestY));
+        }
+    }
+
+    // MOVE_AND_MINE — nearest mine-adjacent walkable cell.
+    if (g_lookupsReady && t.chop > 0 && free > 0) {
+        int bestD = -1, bestX = -1, bestY = -1;
+        for (const auto& [cx, cy] : mineAdjCells) {
+            int d = bfs_dist_lookup[t.y][t.x][cy][cx];
+            if (d < 0) continue;
+            if (bestD == -1 || d < bestD) { bestD = d; bestX = cx; bestY = cy; }
+        }
+        if (bestX >= 0) {
+            out.push_back(MacroAction::MoveAndMine(t.id, bestX, bestY));
+        }
+    }
+
+    // Always include WAIT as a fallback — search needs at least one
+    // option per troll, even on edge-case states where no other macro
+    // is generable.
+    if (out.empty()) out.push_back(MacroAction::Wait());
+
+    return out;
+}
+
+// =============================================================
 // Layer 8 — SearchStrategy (lookahead-scored wrapper around FarmStrategy)
 // =============================================================
 //
