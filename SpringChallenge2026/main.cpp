@@ -2417,6 +2417,7 @@ struct Node {
     vector<MacroAction> baseOpp;  // unfinished opp-macros inherited from parent
     bool initialized = false;
     bool canTrain = false;
+    int trainStats[4] = {0, 0, 0, 0};  // mv, cap, hv, ch — set when canTrain
 
     vector<vector<MacroAction>>     perTrollActions; // [trollIdx][actionIdx]
     vector<vector<TrollActionStat>> perTrollStats;   // [trollIdx][actionIdx]
@@ -2446,6 +2447,89 @@ static int nodeCount = 0;
 }
 
 [[maybe_unused]] static void resetNodePool() { nodeCount = 0; }
+
+// ----- train recipe (Phase B6) ------------------------------------
+//
+// Hardcoded tier sequence mirroring the rival's design — proven to
+// produce the cap=3/cap=4 wood-haulers we've been losing to. Avoids
+// having MCTS rediscover the optimal train ladder each turn (and
+// occasionally getting it wrong, which was a B5 variance source).
+//
+//   Troll 1 → tier A   (2, 2, 2, 2)
+//   Troll 2 → super-S2 (2, 3, 2, 2)  — cap=3 wood hauler
+//   Troll 3 → super-Z  (3, 4, 1, 2)  — cap=4, mv=3 late-game finisher
+//
+// After turn ≥ kChopPhaseStart, the rigid recipe falls back to "best
+// affordable per attribute" so we squeeze in one more troll if
+// resources are short (chooseBestStatsForLastTroll).
+
+// Count my-trolls (player 0).
+[[maybe_unused]] static int myTrollCount(const GameState& s) {
+    int n = 0;
+    for (const auto& t : s.trolls) if (t.owner == 0) n++;
+    return n;
+}
+
+// Per-attribute cost: N + a² of (PLUM, LEMON, APPLE, IRON) for
+// (mv, cap, hv, ch) respectively.
+[[maybe_unused]] static bool canAffordTrain(const GameState& s,
+                                             int ms, int cc, int hv, int cp) {
+    const int n = myTrollCount(s);
+    const Inventory& inv = s.shack[0];
+    return inv[ResourceType::PLUM]  >= n + ms*ms
+        && inv[ResourceType::LEMON] >= n + cc*cc
+        && inv[ResourceType::APPLE] >= n + hv*hv
+        && inv[ResourceType::IRON]  >= n + cp*cp;
+}
+
+// Fallback for late game: pick the highest affordable value per
+// attribute, top-down. Returns false if the result is degenerate
+// (no movement, or zero harvest AND zero chop).
+[[maybe_unused]] static bool chooseBestStatsForLastTroll(const GameState& s,
+                                                          int& ms, int& cc,
+                                                          int& hv, int& cp) {
+    const int n = myTrollCount(s);
+    const Inventory& inv = s.shack[0];
+
+    ms = 0;
+    for (int v = 3; v >= 1; v--)
+        if (inv[ResourceType::PLUM] >= n + v*v) { ms = v; break; }
+    cc = 0;
+    for (int v = 4; v >= 1; v--)
+        if (inv[ResourceType::LEMON] >= n + v*v) { cc = v; break; }
+    hv = 0;
+    for (int v = 1; v >= 0; v--)
+        if (inv[ResourceType::APPLE] >= n + v*v) { hv = v; break; }
+    cp = 0;
+    for (int v = 3; v >= 1; v--)
+        if (inv[ResourceType::IRON] >= n + v*v) { cp = v; break; }
+
+    if (ms == 0 || cc == 0 || (hv == 0 && cp == 0)) return false;
+    return true;
+}
+
+// Resolve next-train stats based on current state. Sets ms/cc/hv/cp
+// and returns true iff a train is wanted AND affordable. Late game
+// (turn ≥ kChopPhaseStart) falls back to per-attribute best.
+[[maybe_unused]] static bool nextTrollTrainStats(const GameState& s,
+                                                  int& ms, int& cc,
+                                                  int& hv, int& cp) {
+    if (!shouldTrainMoreTroll(s)) return false;
+
+    if (s.turn >= kChopPhaseStart) {
+        if (!chooseBestStatsForLastTroll(s, ms, cc, hv, cp)) return false;
+        return canAffordTrain(s, ms, cc, hv, cp);
+    }
+
+    const int n = myTrollCount(s);
+    switch (n) {
+        case 1: ms = 2; cc = 2; hv = 2; cp = 2; break;
+        case 2: ms = 2; cc = 3; hv = 2; cp = 2; break;
+        case 3: ms = 3; cc = 4; hv = 1; cp = 2; break;
+        default: return false;
+    }
+    return canAffordTrain(s, ms, cc, hv, cp);
+}
 
 // ----- joint-action machinery -------------------------------------
 
@@ -2512,17 +2596,19 @@ static int nodeCount = 0;
         node->perTrollStats.back().assign(node->perTrollActions.back().size(), {});
     }
 
-    // Train-affordability flag: any of the rival's hardcoded tier
-    // sequence affordable? For B3 we use a simple "can we afford tier
-    // A=2222 with current N" check. Rich recipe lives in B6.
-    int N = myTrolls;
-    auto cost = [&](int a) { return N + a*a; };
-    const Inventory& inv = node->state.shack[0];
-    node->canTrain = (N < 4)
-        && inv[ResourceType::PLUM]  >= cost(2)
-        && inv[ResourceType::LEMON] >= cost(2)
-        && inv[ResourceType::APPLE] >= cost(2)
-        && inv[ResourceType::IRON]  >= cost(2);
+    // Resolve train stats via the recipe (B6). Stores ms/cc/hv/cp for
+    // jointToPlan to consume; canTrain flips iff the recipe both wants
+    // a train AND we can afford it.
+    int ms, cc, hv, cp;
+    if (nextTrollTrainStats(node->state, ms, cc, hv, cp)) {
+        node->canTrain = true;
+        node->trainStats[0] = ms;
+        node->trainStats[1] = cc;
+        node->trainStats[2] = hv;
+        node->trainStats[3] = cp;
+    } else {
+        node->canTrain = false;
+    }
 
     node->initialized = true;
 }
@@ -2594,7 +2680,9 @@ static int nodeCount = 0;
     for (size_t t = 0; t < idx.size(); t++)
         outMy.push_back(node->perTrollActions[t][idx[t]]);
     if (node->canTrain)
-        outMy.push_back(MacroAction::Train(2, 2, 2, 2));
+        outMy.push_back(MacroAction::Train(
+            node->trainStats[0], node->trainStats[1],
+            node->trainStats[2], node->trainStats[3]));
 }
 
 // Apply a joint action via stepMacros and return (or create) the child.
