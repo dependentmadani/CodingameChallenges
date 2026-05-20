@@ -2034,7 +2034,27 @@ struct TrollPriorSnapshot {
 struct MctsStrategy : IStrategy {
     vector<Action> decide(const GameState& gs) override {
         int budget = (gs.turn == 0) ? 950 : 42;
-        return mcts::runMCTS(gs, budget);
+        vector<Action> primitives = mcts::runMCTS(gs, budget);
+
+        // Fix 1 — force-train guard. If the recipe says we should train
+        // AND the cost is affordable, ensure TRAIN is in the emitted
+        // plan even if MCTS chose to skip it. Arena vs other_code.cpp
+        // showed our 2nd/3rd trolls coming online ~100 turns after
+        // rival's, costing ~150 score in the chop-phase tail. Removing
+        // MCTS variance on this single most consequential decision is
+        // the cheapest way to close that gap.
+        int ms, cc, hv, cp;
+        
+        if (mcts::nextTrollTrainStats(gs, ms, cc, hv, cp)) {
+            bool alreadyTraining = false;
+            for (const auto& a : primitives) {
+                if (a.kind == ActionKind::TRAIN) { alreadyTraining = true; break; }
+            }
+            if (!alreadyTraining) {
+                primitives.push_back(Action::Train(ms, cc, hv, cp));
+            }
+        }
+        return primitives;
     }
 };
 
