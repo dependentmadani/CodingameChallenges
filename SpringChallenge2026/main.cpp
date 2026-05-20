@@ -1368,7 +1368,7 @@ namespace mcts {
         for (const Troll& t : s.trolls) {
             if (t.owner != p) continue;
             trollCount++;
-            pts += 50.0;  // per-troll bonus — drives MCTS to value training
+            pts += 100.0; // per-troll bonus — drives MCTS to value training
             // Carry-in-flight: only wood (the PICK-side asymmetry experiment
             // in v-farm-strategy-stable showed crediting carried fruits
             // discourages PICK-to-plant flows).
@@ -1385,7 +1385,7 @@ namespace mcts {
                           + std::min((double)inv[ResourceType::APPLE], cost)
                           + std::min((double)inv[ResourceType::IRON],  cost))
                          / (4.0 * cost);
-            pts += 40.0 * ready;
+            pts += 80.0 * ready;
         }
         return pts;
     };
