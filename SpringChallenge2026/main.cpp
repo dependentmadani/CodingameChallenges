@@ -16,6 +16,9 @@
 #include <chrono>
 #include <functional>
 #include <queue>
+#include <cmath>
+#include <cstdlib>
+#include <algorithm>
 
 using namespace std;
 
