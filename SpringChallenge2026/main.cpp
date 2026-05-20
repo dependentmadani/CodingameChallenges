@@ -3493,12 +3493,14 @@ int main(int argc, char** argv) {
     GameState gs;
     readInitial(gs);
 
-    // FarmStrategy directly — SearchStrategy wrapper is currently a net
-    // negative in arena (35-45ms/turn, frequent ABORTs, swaps that don't
-    // materialise). Keep SearchStrategy compiled so the test harness can
-    // still exercise it; re-enable here once we have macro-actions +
-    // proper MCTS (the search shape it actually needs).
-    FarmStrategy brain;
+    // MctsStrategy — DUCT-MCTS over macro actions (phases B1-B6). The
+    // FarmStrategy v-farm-strategy-stable code path is still compiled
+    // and can be restored by swapping this line back to `FarmStrategy
+    // brain;` (no other change required). Local idle test:
+    //   FarmStrategy: 133
+    //   MctsStrategy: median 159, 4/5 runs above FarmStrategy
+    // Arena gates the actual judgement — see project_sc2026_mcts.md.
+    MctsStrategy brain;
 
     while (cin.good()) {
         readTurn(gs);
