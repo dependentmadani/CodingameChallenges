@@ -2228,45 +2228,91 @@ struct MacroAction {
 
 namespace mcts {
 
-// ----- heuristic ---------------------------------------------------
+// ----- heuristic (Phase B5) ----------------------------------------
 
-// Game-points delta with per-side per-troll bonus and train-readiness.
-// Scale: roughly raw "game score" units (one game point = ~1 point in
-// the heuristic), so the per-troll bonus of +20 == "this troll is worth
-// ~20 future game points over its lifetime". Tuneable.
 [[maybe_unused]] static int g_rootTurn = 0;
 
+// Phase flags mirroring the rival's two-flag model. We're "still
+// training" until we have 4 my-trolls AND turn < 220. We're "chop
+// phase" once training is done OR turn ≥ 200. These overlap by 20
+// turns (200-220) — both flags can be true together, allowing the
+// bot to chop while still trying to train one more troll.
+[[maybe_unused]] static constexpr int kChopPhaseStart = 200;
+[[maybe_unused]] static constexpr int kTrainingEnd    = 220;
+
+[[maybe_unused]] static bool shouldTrainMoreTroll(const GameState& s) {
+    int myCount = 0;
+    for (const Troll& t : s.trolls) if (t.owner == 0) myCount++;
+    return myCount < 4 && s.turn < kTrainingEnd;
+}
+[[maybe_unused]] static bool isChopPhase(const GameState& s) {
+    return !shouldTrainMoreTroll(s) || s.turn >= kChopPhaseStart;
+}
+
+// Tree max-HP table (matches Simulator's kTreeHP). Used for the chop-
+// progress reward in the chop-phase branch of the heuristic.
+[[maybe_unused]] static int treeMaxHpFor(FruitType type, int size) {
+    static constexpr int hp[4][4] = {
+        {  6,  8, 10, 12 },   // PLUM
+        {  6,  8, 10, 12 },   // LEMON
+        { 11, 14, 17, 20 },   // APPLE
+        {  3,  4,  5,  6 },   // BANANA
+    };
+    int s = std::max(1, std::min(4, size)) - 1;
+    return hp[(int)type][s];
+}
+
+// Multi-component heuristic. All weights are in raw-game-score units so
+// the trunk (fruits + 4*wood) and the shaping terms compose naturally.
+//
+// Components:
+//   Trunk:                fruits (banana capped at 20) + 4*wood
+//   Per-troll bonus:      +30 each (≈ "future score this troll brings")
+//   Carry-in-flight:      +2 per wood (drop later realises +4 → net +2 gain)
+//   Train-readiness:      0..30 linear toward tier-A cost (only pre-chop)
+//   Top-K=2 tree prox:    pre-chop: +(treeValue/dist) for top-2 PLUM/LEMON/
+//                         APPLE trees per side. treeValue=60 if water-adj
+//                         else 40. Banana excluded (chop-only).
+//   Chop-progress reward: chop-phase: per-tree +(1.5 + bananaBonus + prog)
+//                         / dist where prog = (max_hp - hp)/max_hp.
+//                         Encourages finishing partial chops.
+//   Opp decay:            opp side gets +0.1/elapsed-turn penalty to
+//                         discourage plans that assume idle opp.
 [[maybe_unused]] static double heuristic(const GameState& s) {
+    const bool chopPhase   = isChopPhase(s);
+    const bool stillTrain  = shouldTrainMoreTroll(s);
+
     auto sideScore = [&](int p) -> double {
         const Inventory& inv = s.shack[p];
-        // Game points: fruits + 4*wood (matches the actual scoring).
-        double pts = inv.totalFruits() + 4.0 * inv[ResourceType::WOOD];
+        // Trunk: fruits with banana capped at 20 (rival's pattern), +4*wood.
+        double pts = inv[ResourceType::PLUM]
+                   + inv[ResourceType::LEMON]
+                   + inv[ResourceType::APPLE]
+                   + std::min(20, inv[ResourceType::BANANA])
+                   + 4.0 * inv[ResourceType::WOOD];
 
-        // Per-troll bonus. A trained troll produces ~20-50 game points
-        // over its remaining lifetime. Sized smaller than the rival's
-        // +700 because our scale is raw-game-score, not /1000.
         int trollCount = 0;
         for (const Troll& t : s.trolls) {
             if (t.owner != p) continue;
             trollCount++;
-            pts += 20.0;
-            // Carry-in-flight partial credit (wood only — avoids the
-            // PICK asymmetry that bit us in earlier experiments).
+            pts += 50.0;  // per-troll bonus — drives MCTS to value training
+            // Carry-in-flight: only wood (the PICK-side asymmetry experiment
+            // in v-farm-strategy-stable showed crediting carried fruits
+            // discourages PICK-to-plant flows).
             pts += 2.0 * t.carry[ResourceType::WOOD];
         }
 
-        // Train-readiness 0..15: linear reward for having all four
-        // tier-A resources at-cost (N + a² with a=2 for each = N+4).
-        // Sized below the per-troll +20 so the bot prefers TRAINING
-        // over hoarding when both are options.
-        if (trollCount < 4) {
+        // Train-readiness 0..30: linear ratio of how close we are to the
+        // next tier-A train (cost N+a² with a=2 → N+4 per fruit/iron).
+        // Only meaningful while we're still trying to train.
+        if (stillTrain && trollCount < 4) {
             const double cost = trollCount + 4.0;
             double ready = (std::min((double)inv[ResourceType::PLUM],  cost)
                           + std::min((double)inv[ResourceType::LEMON], cost)
                           + std::min((double)inv[ResourceType::APPLE], cost)
                           + std::min((double)inv[ResourceType::IRON],  cost))
                          / (4.0 * cost);
-            pts += 15.0 * ready;
+            pts += 40.0 * ready;
         }
         return pts;
     };
@@ -2274,10 +2320,81 @@ namespace mcts {
     double my = sideScore(0);
     double op = sideScore(1);
 
-    // Anti-overconfidence: inflate opp score by simulation depth.
-    // Without this, MCTS prefers plans that depend on opp doing
-    // nothing for many turns. The decay term penalises deep idle-opp
-    // plays. Tuneable; rival uses 0.5/turn on a /4000 scale.
+    // Tree-proximity bonuses. Two modes depending on chop phase.
+    if (!chopPhase) {
+        // Pre-chop: reward top-2 nearest PLUM/LEMON/APPLE trees per side
+        // (banana excluded — it's chop fodder, not train fuel). Tree
+        // value is doubled (40→60) for water-adjacent trees because they
+        // grow ~3× faster, producing more harvest cycles.
+        constexpr int NUM_FRUITS = 3;
+        constexpr int TOP_K = 2;
+        const FruitType kinds[NUM_FRUITS] = {FruitType::PLUM, FruitType::LEMON, FruitType::APPLE};
+
+        double bestMy[NUM_FRUITS][TOP_K] = {{0,0},{0,0},{0,0}};
+        double bestOp[NUM_FRUITS][TOP_K] = {{0,0},{0,0},{0,0}};
+        auto insertTopK = [](double (&top)[TOP_K], double v) {
+            if (v <= top[TOP_K - 1]) return;
+            int k = TOP_K - 1;
+            while (k > 0 && v > top[k - 1]) { top[k] = top[k - 1]; k--; }
+            top[k] = v;
+        };
+
+        const int myX = s.shackPos[0][0], myY = s.shackPos[0][1];
+        const int opX = s.shackPos[1][0], opY = s.shackPos[1][1];
+        for (const Tree& tr : s.trees) {
+            int idx = -1;
+            for (int i = 0; i < NUM_FRUITS; i++)
+                if (tr.type == kinds[i]) { idx = i; break; }
+            if (idx < 0) continue;
+
+            int dMy = g_lookupsReady
+                ? bfs_dist_lookup[myY][myX][tr.y][tr.x]
+                : manhattan(myX, myY, tr.x, tr.y);
+            int dOp = g_lookupsReady
+                ? bfs_dist_lookup[opY][opX][tr.y][tr.x]
+                : manhattan(opX, opY, tr.x, tr.y);
+            if (dMy <= 0) dMy = 1;
+            if (dOp <= 0) dOp = 1;
+
+            const bool water = (g_lookupsReady && nearWaterLookup[tr.y][tr.x]);
+            // Reduced from 60/40 (rival's scale) to 25/15 — the rival is
+            // on a /4000 scale, we're raw-game-score. Top-K total budget
+            // capped to ~150 (6 slots × 25) so the trunk and per-troll
+            // bonus aren't drowned out by static tree-proximity.
+            const double treeVal = water ? 25.0 : 15.0;
+            insertTopK(bestMy[idx], treeVal / (double)dMy);
+            insertTopK(bestOp[idx], treeVal / (double)dOp);
+        }
+        for (int i = 0; i < NUM_FRUITS; i++)
+            for (int k = 0; k < TOP_K; k++) { my += bestMy[i][k]; op += bestOp[i][k]; }
+    } else {
+        // Chop-phase: per-tree finish-the-chop reward. Banana gets a
+        // small bonus because it's the cheapest tree to clear for wood.
+        const int myX = s.shackPos[0][0], myY = s.shackPos[0][1];
+        const int opX = s.shackPos[1][0], opY = s.shackPos[1][1];
+        for (const Tree& tr : s.trees) {
+            if (tr.health <= 0) continue;
+            int dMy = g_lookupsReady
+                ? bfs_dist_lookup[myY][myX][tr.y][tr.x]
+                : manhattan(myX, myY, tr.x, tr.y);
+            int dOp = g_lookupsReady
+                ? bfs_dist_lookup[opY][opX][tr.y][tr.x]
+                : manhattan(opX, opY, tr.x, tr.y);
+            if (dMy <= 0) dMy = 1;
+            if (dOp <= 0) dOp = 1;
+
+            int maxHp = treeMaxHpFor(tr.type, tr.size);
+            double progress = (double)(maxHp - tr.health) / (double)std::max(1, maxHp);
+            double bananaBonus = (tr.type == FruitType::BANANA) ? 1.0 : 0.0;
+            double v = 1.5 + bananaBonus + progress;
+            my += v / (double)dMy;
+            op += v / (double)dOp;
+        }
+    }
+
+    // Opp-decay: penalise opp side proportional to simulation depth.
+    // Without it MCTS would value plans that depend on opp doing nothing
+    // for many turns. Scaled to our raw-game-score units.
     int turnsElapsed = std::max(0, s.turn - g_rootTurn);
     op += 0.1 * turnsElapsed;
 
