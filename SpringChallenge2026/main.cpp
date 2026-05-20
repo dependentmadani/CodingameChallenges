@@ -2579,6 +2579,126 @@ static int nodeCount = 0;
     return best;
 }
 
+// ----- cross-turn warm start (Phase B4) ---------------------------
+//
+// At the end of each turn, snapshot the per-troll bandit stats of the
+// child node we committed to. At the start of the next turn, copy
+// matching action stats onto the new root's bandits. Matching is by
+// stable macro key (kind + target + fruit/train-attrs), so a freshly-
+// generated candidate that's the same conceptual macro inherits its
+// visit count and average score from the prior turn's search.
+//
+// Effect: ~2× effective iterations from the same budget, because the
+// second turn doesn't start every bandit at visits=0.
+
+struct TrollPriorSnapshot {
+    int trollId;
+    vector<MacroAction>     actions;
+    vector<TrollActionStat> stats;
+};
+[[maybe_unused]] static vector<TrollPriorSnapshot> g_priorTrolls;
+[[maybe_unused]] static bool g_priorAvailable = false;
+
+// Stable equality for matching macros across turns. Ignores trollId
+// (the troll context is implicit — these macros are stored in the
+// bandit for a specific troll). Ignores `finished` and `stepsTaken`
+// (those are runtime state, not identity).
+[[maybe_unused]] static bool macrosMatch(const MacroAction& a, const MacroAction& b) {
+    if (a.kind != b.kind) return false;
+    switch (a.kind) {
+        case MacroKind::PRIM_TRAIN:
+            return a.trainAttrs[0] == b.trainAttrs[0]
+                && a.trainAttrs[1] == b.trainAttrs[1]
+                && a.trainAttrs[2] == b.trainAttrs[2]
+                && a.trainAttrs[3] == b.trainAttrs[3];
+        case MacroKind::PRIM_WAIT:
+        case MacroKind::NONE:
+            return true;
+        case MacroKind::MOVE_AND_PLANT:
+        case MacroKind::MOVE_AND_PICK:
+            return a.x == b.x && a.y == b.y && a.fruit == b.fruit;
+        default:
+            return a.x == b.x && a.y == b.y;
+    }
+}
+
+// Save the root's per-troll bandit stats at end of turn. We snapshot
+// the ROOT (not the committed child) because:
+//   1. The root is always initialized (initializeNode runs at the start
+//      of runMCTS), so we always have non-empty data to save.
+//   2. The root's state matches what NEXT turn's root will be (modulo
+//      one CodinGame primitive's worth of advancement) — so the per-
+//      troll candidate macros tend to overlap, making macrosMatch
+//      productive.
+//   3. The committed-child's state is ~5-10 game turns ahead (multi-
+//      turn macros), so its candidate macros would target stale cells.
+// Indexed by the troll id so it survives troll-count changes between
+// turns (a fresh train spawning a new troll has no prior).
+[[maybe_unused]] static void snapshotRootBandits(Node* root,
+                                                 const vector<int>& /*bestIdx*/) {
+    g_priorTrolls.clear();
+    g_priorAvailable = false;
+
+    if (!root->initialized) return;
+
+    // Map perTrollActions slot t -> troll id (iteration order matches
+    // initializeNode's owner==0 filter).
+    vector<int> trollIds;
+    for (const auto& t : root->state.trolls)
+        if (t.owner == 0) trollIds.push_back(t.id);
+
+    for (size_t t = 0; t < root->perTrollActions.size(); t++) {
+        if (t >= trollIds.size()) break;
+        TrollPriorSnapshot snap;
+        snap.trollId = trollIds[t];
+        snap.actions = root->perTrollActions[t];
+        snap.stats   = root->perTrollStats[t];
+        g_priorTrolls.push_back(std::move(snap));
+    }
+    g_priorAvailable = !g_priorTrolls.empty();
+}
+
+// Copy matching action stats onto the new root's bandits. Seeds
+// root->visits so the first UCB selection has a sensible logN term.
+// Returns the matched count for debug logging.
+[[maybe_unused]] static int applyPriorsToRoot(Node* root) {
+    if (!g_priorAvailable || g_priorTrolls.empty()) return 0;
+    if (!root->initialized) return 0;
+
+    // Map perTrollActions slot t -> troll id in root state.
+    vector<int> trollIds;
+    for (const auto& t : root->state.trolls)
+        if (t.owner == 0) trollIds.push_back(t.id);
+
+    int maxSum = 0;
+    int matched = 0;
+    for (size_t t = 0; t < root->perTrollActions.size(); t++) {
+        if (t >= trollIds.size()) break;
+        int tid = trollIds[t];
+        const TrollPriorSnapshot* prior = nullptr;
+        for (const auto& p : g_priorTrolls)
+            if (p.trollId == tid) { prior = &p; break; }
+        if (!prior) continue;  // newly-trained troll has no prior
+
+        const auto& acts = root->perTrollActions[t];
+        auto& stats = root->perTrollStats[t];
+        int sum = 0;
+        for (size_t i = 0; i < acts.size(); i++) {
+            for (size_t j = 0; j < prior->actions.size(); j++) {
+                if (macrosMatch(acts[i], prior->actions[j])) {
+                    stats[i] = prior->stats[j];
+                    sum += stats[i].visits;
+                    matched++;
+                    break;
+                }
+            }
+        }
+        if (sum > maxSum) maxSum = sum;
+    }
+    root->visits = maxSum;
+    return matched;
+}
+
 // Top-level entry point. Runs MCTS for the configured budget and
 // returns the best joint action as a primitive Action list, ready
 // to feed to emit().
@@ -2592,6 +2712,9 @@ static int nodeCount = 0;
     if (!root) return {};
     root->state = rootState;
     initializeNode(root);
+
+    // Warm-start the bandits from last turn's chosen-child snapshot.
+    int reused = applyPriorsToRoot(root);
 
     auto start = clock::now();
     int iters = 0;
@@ -2616,8 +2739,13 @@ static int nodeCount = 0;
         primitives.push_back(a);
     }
 
+    // Snapshot for next turn's warm start, BEFORE the node pool gets
+    // reset on the next runMCTS call (which would invalidate Node* refs).
+    snapshotRootBandits(root, bestIdx);
+
     DBG("mcts: iters=" << iters << " nodes=" << nodeCount
-        << " root.visits=" << root->visits);
+        << " root.visits=" << root->visits
+        << " reusedStats=" << reused);
     return primitives;
 }
 
