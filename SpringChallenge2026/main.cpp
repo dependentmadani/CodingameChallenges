@@ -1582,8 +1582,19 @@ static int nodeCount = 0;
 }
 
 // Resolve next-train stats based on current state. Sets ms/cc/hv/cp
-// and returns true iff a train is wanted AND affordable. Late game
-// (turn ≥ kChopPhaseStart) falls back to per-attribute best.
+// and returns true iff a train is wanted AND affordable.
+//
+// Strategy:
+//   1. Late game (turn ≥ kChopPhaseStart): per-attribute best.
+//   2. Try the recipe tier for the current troll count.
+//   3. (Fix 2) If recipe isn't affordable, fall back to tier C
+//      `1212` — the universal "good-enough chopper" (cap=2 ch=2).
+//      Arena vs other_code.cpp showed our 3rd troll coming online
+//      ~100 turns after rival's because the recipe's super-S2
+//      tier needs L=N+9=11 (cost for cap=3). Tier C only needs
+//      L=N+4=6, typically reachable ~T75 vs T175+ for super-S2.
+//      Trading "cap=3 super-S2 eventually" for "cap=2 tier C now"
+//      gives us +100 turns of compounded chop production.
 [[maybe_unused]] static bool nextTrollTrainStats(const GameState& s,
                                                   int& ms, int& cc,
                                                   int& hv, int& cp) {
@@ -1594,13 +1605,24 @@ static int nodeCount = 0;
         return canAffordTrain(s, ms, cc, hv, cp);
     }
 
+    // Try recipe tier first.
+    int rms = 0, rcc = 0, rhv = 0, rcp = 0;
     const int n = myTrollCount(s);
     switch (n) {
-        case 1: ms = 2; cc = 2; hv = 2; cp = 2; break;
-        case 2: ms = 2; cc = 3; hv = 2; cp = 2; break;
-        case 3: ms = 3; cc = 4; hv = 1; cp = 2; break;
+        case 1: rms = 2; rcc = 2; rhv = 2; rcp = 2; break;  // tier A
+        case 2: rms = 2; rcc = 3; rhv = 2; rcp = 2; break;  // super-S2
+        case 3: rms = 3; rcc = 4; rhv = 1; rcp = 2; break;  // super-Z
         default: return false;
     }
+    if (canAffordTrain(s, rms, rcc, rhv, rcp)) {
+        ms = rms; cc = rcc; hv = rhv; cp = rcp;
+        return true;
+    }
+
+    // Fix 2 fallback: tier C `1212`. Cheaper plum/apple than the
+    // recipe's super-tiers (N+1 each), same chop power (2). Better to
+    // get a chopper online now than wait for the perfect tier.
+    ms = 1; cc = 2; hv = 1; cp = 2;
     return canAffordTrain(s, ms, cc, hv, cp);
 }
 
