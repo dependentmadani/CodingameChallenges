@@ -292,6 +292,196 @@ static int manhattan(int ax, int ay, int bx, int by) {
 }
 
 // =============================================================
+// Layer 4b — Static lookup tables (Phase B1)
+// =============================================================
+//
+// Precomputed once at game init from the static map (terrain only,
+// trees/trolls excluded — they're dynamic state). Used by future
+// macro-action generation and MCTS heuristic to avoid running BFS
+// inside hot loops.
+//
+// FarmStrategy still uses its own dynamic-predicate BFS for movement
+// because its walkable check includes ally blockers and reservations,
+// which these static tables can't represent. That's intentional —
+// these tables answer "is X reachable from Y on an empty board" only.
+
+constexpr int MAX_MAP_W = 22;
+constexpr int MAX_MAP_H = 11;
+
+// bfs_dist_lookup[sy][sx][ty][tx] = BFS distance (Manhattan-respecting,
+// 4-connected) on grass + shack cells. -1 = unreachable.
+// Size: 22*11*22*11*sizeof(int) = ~234 KB. Fits comfortably.
+[[maybe_unused]] static int bfs_dist_lookup[MAX_MAP_H][MAX_MAP_W][MAX_MAP_H][MAX_MAP_W];
+
+// nextStepMask[sy][sx][ty][tx] = bitmask of cardinal directions that step
+// from (sx,sy) to a cell exactly 1-closer to (tx,ty). Direction encoding
+// matches STEP_DXS/DYS below: bit 0=+x, 1=-x, 2=+y, 3=-y. Lets a future
+// moveToward walk greedily in O(speed) instead of re-running BFS.
+[[maybe_unused]] static uint8_t nextStepMask[MAX_MAP_H][MAX_MAP_W][MAX_MAP_H][MAX_MAP_W];
+[[maybe_unused]] static constexpr int STEP_DXS[4] = {1, -1, 0, 0};
+[[maybe_unused]] static constexpr int STEP_DYS[4] = {0, 0, 1, -1};
+
+// Per-cell "is 4-adjacent to a water tile" flag.
+[[maybe_unused]] static bool nearWaterLookup[MAX_MAP_H][MAX_MAP_W];
+
+// Per-player caches keyed off the shack position. Shacks never move.
+// [0] = us, [1] = opp.
+[[maybe_unused]] static vector<pair<int,int>> shackAdjCells[2];             // walkable cells 4-adj to shack
+[[maybe_unused]] static vector<pair<int,int>> plantableCellsAroundShack[2]; // walkable cells with BFS dist ≤ 2 of shack
+[[maybe_unused]] static vector<pair<int,int>> mineAdjCells;                 // walkable cells 4-adj to ANY iron mine
+[[maybe_unused]] static bool g_lookupsReady = false;
+
+// Build bfs_dist_lookup + nextStepMask. Walkability: GRASS and SHACK_OWN
+// /SHACK_OPP cells. Trees + iron + water + rock are non-walkable for
+// distance purposes (trees are dynamic; for the rare case of walking
+// onto a planted tree the macro layer will fall back to per-cell BFS).
+[[maybe_unused]] static void buildBfsLookup(const GridMap& m) {
+    auto walkable = [&](int x, int y) -> bool {
+        Terrain c = m.at(x, y);
+        return c == Terrain::GRASS
+            || c == Terrain::SHACK_OWN
+            || c == Terrain::SHACK_OPP;
+    };
+
+    // Initialize to -1.
+    for (int sy = 0; sy < m.h; sy++)
+        for (int sx = 0; sx < m.w; sx++)
+            for (int ty = 0; ty < m.h; ty++)
+                for (int tx = 0; tx < m.w; tx++)
+                    bfs_dist_lookup[sy][sx][ty][tx] = -1;
+
+    // BFS from every walkable source cell.
+    static constexpr int DX[4] = {1, -1, 0, 0};
+    static constexpr int DY[4] = {0, 0, 1, -1};
+    for (int sy = 0; sy < m.h; sy++) {
+        for (int sx = 0; sx < m.w; sx++) {
+            if (!walkable(sx, sy)) continue;
+            bfs_dist_lookup[sy][sx][sy][sx] = 0;
+            queue<pair<int,int>> q;
+            q.push({sx, sy});
+            while (!q.empty()) {
+                auto [cx, cy] = q.front(); q.pop();
+                int cd = bfs_dist_lookup[sy][sx][cy][cx];
+                for (int k = 0; k < 4; k++) {
+                    int nx = cx + DX[k], ny = cy + DY[k];
+                    if (!m.inBounds(nx, ny)) continue;
+                    if (!walkable(nx, ny)) continue;
+                    if (bfs_dist_lookup[sy][sx][ny][nx] != -1) continue;
+                    bfs_dist_lookup[sy][sx][ny][nx] = cd + 1;
+                    q.push({nx, ny});
+                }
+            }
+        }
+    }
+
+    // Derive nextStepMask from the completed distance table.
+    for (int sy = 0; sy < m.h; sy++) {
+        for (int sx = 0; sx < m.w; sx++) {
+            for (int ty = 0; ty < m.h; ty++) {
+                for (int tx = 0; tx < m.w; tx++) {
+                    uint8_t mask = 0;
+                    int d = bfs_dist_lookup[sy][sx][ty][tx];
+                    if (d > 0) {
+                        for (int k = 0; k < 4; k++) {
+                            int nx = sx + STEP_DXS[k], ny = sy + STEP_DYS[k];
+                            if (!m.inBounds(nx, ny)) continue;
+                            if (!walkable(nx, ny)) continue;
+                            if (bfs_dist_lookup[ny][nx][ty][tx] == d - 1)
+                                mask |= (uint8_t)(1 << k);
+                        }
+                    }
+                    nextStepMask[sy][sx][ty][tx] = mask;
+                }
+            }
+        }
+    }
+}
+
+// Per-cell water-adjacency. Once cached, isWaterAdjacent can be a O(1)
+// lookup instead of 4 cell reads on every harvest/cooldown computation.
+[[maybe_unused]] static void buildNearWaterLookup(const GridMap& m) {
+    static constexpr int DX[4] = {1, -1, 0, 0};
+    static constexpr int DY[4] = {0, 0, 1, -1};
+    for (int y = 0; y < m.h; y++) {
+        for (int x = 0; x < m.w; x++) {
+            bool near = false;
+            for (int k = 0; k < 4; k++) {
+                int nx = x + DX[k], ny = y + DY[k];
+                if (!m.inBounds(nx, ny)) continue;
+                if (m.at(nx, ny) == Terrain::WATER) { near = true; break; }
+            }
+            nearWaterLookup[y][x] = near;
+        }
+    }
+}
+
+// Walkable cells adjacent to each iron-ore tile (dedup across mines).
+// These are the "MINE source" cells — a troll must be 4-adj to ore.
+[[maybe_unused]] static void buildMineAdjCells(const GridMap& m) {
+    mineAdjCells.clear();
+    static constexpr int DX[4] = {1, -1, 0, 0};
+    static constexpr int DY[4] = {0, 0, 1, -1};
+    vector<vector<bool>> seen(m.h, vector<bool>(m.w, false));
+    for (int y = 0; y < m.h; y++) {
+        for (int x = 0; x < m.w; x++) {
+            if (m.at(x, y) != Terrain::IRON_ORE) continue;
+            for (int k = 0; k < 4; k++) {
+                int nx = x + DX[k], ny = y + DY[k];
+                if (!m.inBounds(nx, ny)) continue;
+                if (seen[ny][nx]) continue;
+                if (m.at(nx, ny) != Terrain::GRASS) continue;
+                seen[ny][nx] = true;
+                mineAdjCells.push_back({nx, ny});
+            }
+        }
+    }
+}
+
+// Per-player shack-adjacent walkable cells + plantable cells (BFS dist ≤ 2).
+// Requires bfs_dist_lookup already built.
+[[maybe_unused]] static void buildShackCaches(const GridMap& m,
+                                              int myX, int myY,
+                                              int oppX, int oppY) {
+    static constexpr int DX[4] = {1, -1, 0, 0};
+    static constexpr int DY[4] = {0, 0, 1, -1};
+    int sx[2] = {myX, oppX};
+    int sy[2] = {myY, oppY};
+    for (int p = 0; p < 2; p++) {
+        shackAdjCells[p].clear();
+        plantableCellsAroundShack[p].clear();
+        // Direct neighbours of the shack cell that are walkable grass.
+        for (int k = 0; k < 4; k++) {
+            int nx = sx[p] + DX[k], ny = sy[p] + DY[k];
+            if (!m.inBounds(nx, ny)) continue;
+            if (m.at(nx, ny) != Terrain::GRASS) continue;
+            shackAdjCells[p].push_back({nx, ny});
+        }
+        // All grass cells with BFS dist ≤ 2 of the shack.
+        for (int y = 0; y < m.h; y++) {
+            for (int x = 0; x < m.w; x++) {
+                if (m.at(x, y) != Terrain::GRASS) continue;
+                int d = bfs_dist_lookup[sy[p]][sx[p]][y][x];
+                if (d < 0 || d > 2) continue;
+                plantableCellsAroundShack[p].push_back({x, y});
+            }
+        }
+    }
+}
+
+// Top-level builder. Call after readInitial AND once shacks are known
+// (first readTurn finishes parsing). Idempotent — re-calling is cheap
+// but the lookups don't change so it's wasteful.
+[[maybe_unused]] static void buildStaticLookups(const GridMap& m,
+                                                int myShackX, int myShackY,
+                                                int oppShackX, int oppShackY) {
+    buildBfsLookup(m);
+    buildNearWaterLookup(m);
+    buildMineAdjCells(m);
+    buildShackCaches(m, myShackX, myShackY, oppShackX, oppShackY);
+    g_lookupsReady = true;
+}
+
+// =============================================================
 // Layer 5 — Strategy
 // =============================================================
 
@@ -2200,6 +2390,18 @@ int main(int argc, char** argv) {
     while (cin.good()) {
         readTurn(gs);
         if (!cin.good()) break;
+
+        // Build the static lookup tables once shack positions are known
+        // (parsed from the first turn's troll list). FarmStrategy doesn't
+        // use these yet — they're infrastructure for the macro-action /
+        // MCTS layers landing in subsequent phases. Building is ~5-10ms
+        // on max-size maps, well inside the 1000ms first-turn budget.
+        if (!g_lookupsReady
+            && gs.shackPos[0][0] >= 0 && gs.shackPos[1][0] >= 0) {
+            buildStaticLookups(gs.map,
+                               gs.shackPos[0][0], gs.shackPos[0][1],
+                               gs.shackPos[1][0], gs.shackPos[1][1]);
+        }
 
         // Strategy emits one comprehensive DBG line per turn (inside decide()).
         auto actions = brain.decide(gs);
