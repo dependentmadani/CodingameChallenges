@@ -2211,6 +2211,428 @@ struct MacroAction {
 }
 
 // =============================================================
+// Layer 7b — DUCT-MCTS (Phase B3)
+// =============================================================
+//
+// Decoupled UCT over the macro-action layer. Instead of enumerating
+// the joint cartesian product of per-troll macros as children, we
+// keep per-troll bandits and lazily allocate child nodes keyed by
+// the packed joint action.
+//
+// Heuristic (lean for B3) — game points + per-troll bonus + train-
+// readiness. Top-K trees and chop-progress shaping land in Phase B5.
+//
+// This is additive: FarmStrategy stays the live brain in main(). The
+// new MctsStrategy class compiles but isn't wired into main() until
+// we've verified it side-by-side.
+
+namespace mcts {
+
+// ----- heuristic ---------------------------------------------------
+
+// Game-points delta with per-side per-troll bonus and train-readiness.
+// Scale: roughly raw "game score" units (one game point = ~1 point in
+// the heuristic), so the per-troll bonus of +20 == "this troll is worth
+// ~20 future game points over its lifetime". Tuneable.
+[[maybe_unused]] static int g_rootTurn = 0;
+
+[[maybe_unused]] static double heuristic(const GameState& s) {
+    auto sideScore = [&](int p) -> double {
+        const Inventory& inv = s.shack[p];
+        // Game points: fruits + 4*wood (matches the actual scoring).
+        double pts = inv.totalFruits() + 4.0 * inv[ResourceType::WOOD];
+
+        // Per-troll bonus. A trained troll produces ~20-50 game points
+        // over its remaining lifetime. Sized smaller than the rival's
+        // +700 because our scale is raw-game-score, not /1000.
+        int trollCount = 0;
+        for (const Troll& t : s.trolls) {
+            if (t.owner != p) continue;
+            trollCount++;
+            pts += 20.0;
+            // Carry-in-flight partial credit (wood only — avoids the
+            // PICK asymmetry that bit us in earlier experiments).
+            pts += 2.0 * t.carry[ResourceType::WOOD];
+        }
+
+        // Train-readiness 0..15: linear reward for having all four
+        // tier-A resources at-cost (N + a² with a=2 for each = N+4).
+        // Sized below the per-troll +20 so the bot prefers TRAINING
+        // over hoarding when both are options.
+        if (trollCount < 4) {
+            const double cost = trollCount + 4.0;
+            double ready = (std::min((double)inv[ResourceType::PLUM],  cost)
+                          + std::min((double)inv[ResourceType::LEMON], cost)
+                          + std::min((double)inv[ResourceType::APPLE], cost)
+                          + std::min((double)inv[ResourceType::IRON],  cost))
+                         / (4.0 * cost);
+            pts += 15.0 * ready;
+        }
+        return pts;
+    };
+
+    double my = sideScore(0);
+    double op = sideScore(1);
+
+    // Anti-overconfidence: inflate opp score by simulation depth.
+    // Without this, MCTS prefers plans that depend on opp doing
+    // nothing for many turns. The decay term penalises deep idle-opp
+    // plays. Tuneable; rival uses 0.5/turn on a /4000 scale.
+    int turnsElapsed = std::max(0, s.turn - g_rootTurn);
+    op += 0.1 * turnsElapsed;
+
+    return my - op;
+}
+
+// ----- node pool ---------------------------------------------------
+
+constexpr int MAX_NODES = 8192;
+constexpr int MAX_TROLLS_PER_SIDE = 8;
+
+struct TrollActionStat {
+    int visits = 0;
+    double score = 0.0;
+};
+
+struct Node {
+    GameState state;
+    vector<MacroAction> baseMy;   // unfinished my-macros inherited from parent
+    vector<MacroAction> baseOpp;  // unfinished opp-macros inherited from parent
+    bool initialized = false;
+    bool canTrain = false;
+
+    vector<vector<MacroAction>>     perTrollActions; // [trollIdx][actionIdx]
+    vector<vector<TrollActionStat>> perTrollStats;   // [trollIdx][actionIdx]
+
+    vector<pair<uint64_t, Node*>> children;  // jointKey -> child
+
+    int visits = 0;
+    double score = 0.0;
+};
+
+static Node nodePool[MAX_NODES];
+static int nodeCount = 0;
+
+[[maybe_unused]] static Node* allocNode() {
+    if (nodeCount >= MAX_NODES - 1) return nullptr;
+    Node* n = &nodePool[nodeCount++];
+    n->baseMy.clear();
+    n->baseOpp.clear();
+    n->initialized = false;
+    n->canTrain = false;
+    n->perTrollActions.clear();
+    n->perTrollStats.clear();
+    n->children.clear();
+    n->visits = 0;
+    n->score = 0.0;
+    return n;
+}
+
+[[maybe_unused]] static void resetNodePool() { nodeCount = 0; }
+
+// ----- joint-action machinery -------------------------------------
+
+// Pack each troll's candidate-action index into 8 bits.
+[[maybe_unused]] static uint64_t packJointKey(const vector<int>& idx) {
+    uint64_t key = 0;
+    for (size_t t = 0; t < idx.size(); t++)
+        key |= ((uint64_t)(idx[t] & 0xFF)) << (t * 8);
+    return key;
+}
+
+// Two macros conflict if both target the same cell with a "targeted"
+// macro type (HARVEST/CHOP/PLANT/MINE). PICK/DROP are intentionally
+// allowed to coexist because multiple shack-adj cells are valid drop
+// points.
+[[maybe_unused]] static bool isTargetedMacro(const MacroAction& m) {
+    switch (m.kind) {
+        case MacroKind::MOVE_AND_HARVEST:
+        case MacroKind::MOVE_AND_CHOP:
+        case MacroKind::MOVE_AND_PLANT:
+        case MacroKind::MOVE_AND_MINE:
+            return true;
+        default:
+            return false;
+    }
+}
+[[maybe_unused]] static bool conflictsWith(const MacroAction& a, const MacroAction& b) {
+    if (!isTargetedMacro(a) || !isTargetedMacro(b)) return false;
+    return a.x == b.x && a.y == b.y;
+}
+
+// Look up an existing child by packed joint key.
+[[maybe_unused]] static Node* findChild(const Node* n, uint64_t key) {
+    for (const auto& p : n->children)
+        if (p.first == key) return p.second;
+    return nullptr;
+}
+
+// Lazily build per-troll candidate lists + bandit slots on first visit.
+[[maybe_unused]] static void initializeNode(Node* node) {
+    // Only generate candidates for OUR trolls (player 0). Opp is modeled
+    // as static for now — we don't simulate their decisions in this
+    // single-player MCTS variant. The decay term in heuristic absorbs
+    // the modeling error.
+    node->perTrollActions.clear();
+    node->perTrollStats.clear();
+    int myTrolls = 0;
+    for (const auto& t : node->state.trolls) if (t.owner == 0) myTrolls++;
+
+    node->perTrollActions.reserve(myTrolls);
+    node->perTrollStats.reserve(myTrolls);
+    for (const auto& t : node->state.trolls) {
+        if (t.owner != 0) continue;
+        // Honour any kept-macro from parent (a macro still in progress).
+        const MacroAction* kept = nullptr;
+        for (const auto& m : node->baseMy)
+            if (m.trollId == t.id && !m.finished) { kept = &m; break; }
+        if (kept) {
+            node->perTrollActions.push_back({*kept});
+        } else {
+            node->perTrollActions.push_back(generateTrollMacroActions(node->state, t));
+        }
+        node->perTrollStats.emplace_back();
+        node->perTrollStats.back().assign(node->perTrollActions.back().size(), {});
+    }
+
+    // Train-affordability flag: any of the rival's hardcoded tier
+    // sequence affordable? For B3 we use a simple "can we afford tier
+    // A=2222 with current N" check. Rich recipe lives in B6.
+    int N = myTrolls;
+    auto cost = [&](int a) { return N + a*a; };
+    const Inventory& inv = node->state.shack[0];
+    node->canTrain = (N < 4)
+        && inv[ResourceType::PLUM]  >= cost(2)
+        && inv[ResourceType::LEMON] >= cost(2)
+        && inv[ResourceType::APPLE] >= cost(2)
+        && inv[ResourceType::IRON]  >= cost(2);
+
+    node->initialized = true;
+}
+
+// DUCT selection: per-troll bandits, masking out conflicting picks.
+[[maybe_unused]] static void selectJointAction(Node* node,
+                                               vector<int>& outIdx,
+                                               uint64_t& outKey) {
+    int M = (int)node->perTrollActions.size();
+    outIdx.assign(M, 0);
+    outKey = 0;
+    if (M == 0) return;
+
+    double logN = node->visits > 0 ? std::log((double)node->visits) : 0.0;
+    constexpr double UCT_C = 1.41421356;
+
+    vector<int> chosenSoFar;
+    chosenSoFar.reserve(M);
+    for (int t = 0; t < M; t++) {
+        const auto& acts = node->perTrollActions[t];
+        const auto& sts  = node->perTrollStats[t];
+        int K = (int)acts.size();
+
+        // Admissible: doesn't target-conflict with earlier picks.
+        vector<int> admissible;
+        admissible.reserve(K);
+        for (int i = 0; i < K; i++) {
+            bool ok = true;
+            for (int prevT = 0; prevT < t; prevT++) {
+                if (conflictsWith(acts[i],
+                                  node->perTrollActions[prevT][outIdx[prevT]])) {
+                    ok = false; break;
+                }
+            }
+            if (ok) admissible.push_back(i);
+        }
+        if (admissible.empty()) for (int i = 0; i < K; i++) admissible.push_back(i);
+
+        // Untried first.
+        vector<int> untried;
+        for (int i : admissible) if (sts[i].visits == 0) untried.push_back(i);
+
+        int pick;
+        if (!untried.empty()) {
+            pick = untried[rand() % untried.size()];
+        } else {
+            int best = admissible[0];
+            double bestUct = -1e30;
+            for (int i : admissible) {
+                double exploit = sts[i].score / (double)sts[i].visits;
+                double explore = UCT_C * std::sqrt(logN / (double)sts[i].visits);
+                double uct = exploit + explore;
+                if (uct > bestUct) { bestUct = uct; best = i; }
+            }
+            pick = best;
+        }
+
+        outIdx[t] = pick;
+        outKey |= ((uint64_t)(pick & 0xFF)) << (t * 8);
+    }
+}
+
+// Build the full macro plan (per-troll picks + optional TRAIN).
+[[maybe_unused]] static void jointToPlan(Node* node,
+                                         const vector<int>& idx,
+                                         vector<MacroAction>& outMy) {
+    outMy.clear();
+    outMy.reserve(idx.size() + 1);
+    for (size_t t = 0; t < idx.size(); t++)
+        outMy.push_back(node->perTrollActions[t][idx[t]]);
+    if (node->canTrain)
+        outMy.push_back(MacroAction::Train(2, 2, 2, 2));
+}
+
+// Apply a joint action via stepMacros and return (or create) the child.
+[[maybe_unused]] static Node* expand(Node* node, const vector<int>& idx, uint64_t key) {
+    if (Node* existing = findChild(node, key)) return existing;
+
+    Node* child = allocNode();
+    if (!child) return node;  // pool exhausted — re-evaluate at this node
+
+    child->state = node->state;
+    // Build my plan (with optional train) and opp's empty plan.
+    vector<MacroAction> myPlan, oppPlan;
+    jointToPlan(node, idx, myPlan);
+    child->state = stepMacros(child->state, myPlan, oppPlan);
+
+    // Carry unfinished macros forward into the child's base.
+    for (const auto& m : myPlan) if (!m.finished) child->baseMy.push_back(m);
+    for (const auto& m : oppPlan) if (!m.finished) child->baseOpp.push_back(m);
+
+    node->children.emplace_back(key, child);
+    return child;
+}
+
+// Is this state terminal for scoring purposes?
+[[maybe_unused]] static bool isEndGame(const GameState& s) {
+    return s.turn >= 300;
+}
+
+// One MCTS iteration: select -> expand -> evaluate -> backprop.
+[[maybe_unused]] static double mctsIter(Node* node) {
+    if (isEndGame(node->state)) {
+        double v = heuristic(node->state);
+        node->visits++;
+        node->score += v;
+        return v;
+    }
+    if (!node->initialized) initializeNode(node);
+    if (node->perTrollActions.empty()) {
+        // No my-trolls. Evaluate.
+        double v = heuristic(node->state);
+        node->visits++;
+        node->score += v;
+        return v;
+    }
+
+    vector<int> idx;
+    uint64_t key;
+    selectJointAction(node, idx, key);
+
+    bool newChild = (findChild(node, key) == nullptr);
+    Node* child = expand(node, idx, key);
+    double childValue;
+    if (newChild || isEndGame(child->state)) {
+        childValue = heuristic(child->state);
+        child->visits++;
+        child->score += childValue;
+    } else {
+        childValue = mctsIter(child);
+    }
+
+    // Backprop into per-troll bandits + node total.
+    for (size_t t = 0; t < idx.size(); t++) {
+        node->perTrollStats[t][idx[t]].visits++;
+        node->perTrollStats[t][idx[t]].score += childValue;
+    }
+    node->visits++;
+    node->score += childValue;
+    return childValue;
+}
+
+// After search, pick the most-visited candidate per troll (ties broken
+// by higher avg score), respecting target conflicts greedily by id.
+[[maybe_unused]] static vector<int> getBestPerTrollIndices(Node* node) {
+    int T = (int)node->perTrollActions.size();
+    vector<int> best(T, 0);
+    for (int t = 0; t < T; t++) {
+        const auto& acts = node->perTrollActions[t];
+        const auto& sts  = node->perTrollStats[t];
+        int bestIdx = -1, bestVisits = -1;
+        double bestAvg = -1e30;
+        for (int i = 0; i < (int)sts.size(); i++) {
+            // skip if conflicts with already-chosen earlier troll
+            bool conflict = false;
+            for (int p = 0; p < t; p++)
+                if (conflictsWith(acts[i], node->perTrollActions[p][best[p]])) {
+                    conflict = true; break;
+                }
+            if (conflict) continue;
+            double avg = sts[i].visits > 0 ? sts[i].score / sts[i].visits : -1e30;
+            if (sts[i].visits > bestVisits
+                || (sts[i].visits == bestVisits && avg > bestAvg)) {
+                bestVisits = sts[i].visits;
+                bestAvg = avg;
+                bestIdx = i;
+            }
+        }
+        best[t] = bestIdx >= 0 ? bestIdx : 0;
+    }
+    return best;
+}
+
+// Top-level entry point. Runs MCTS for the configured budget and
+// returns the best joint action as a primitive Action list, ready
+// to feed to emit().
+[[maybe_unused]] static vector<Action> runMCTS(const GameState& rootState,
+                                               int budgetMs) {
+    using clock = std::chrono::steady_clock;
+    g_rootTurn = rootState.turn;
+    resetNodePool();
+
+    Node* root = allocNode();
+    if (!root) return {};
+    root->state = rootState;
+    initializeNode(root);
+
+    auto start = clock::now();
+    int iters = 0;
+    while (true) {
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            clock::now() - start).count();
+        if (elapsedMs >= budgetMs) break;
+        if (nodeCount >= MAX_NODES - 64) break;
+        mctsIter(root);
+        iters++;
+    }
+
+    // Convert best macros into per-troll primitives for emit().
+    vector<int> bestIdx = getBestPerTrollIndices(root);
+    vector<MacroAction> myPlan;
+    jointToPlan(root, bestIdx, myPlan);
+
+    vector<Action> primitives;
+    primitives.reserve(myPlan.size());
+    for (auto& m : myPlan) {
+        Action a = macroPrimitive(rootState, m);
+        primitives.push_back(a);
+    }
+
+    DBG("mcts: iters=" << iters << " nodes=" << nodeCount
+        << " root.visits=" << root->visits);
+    return primitives;
+}
+
+}  // namespace mcts
+
+// MctsStrategy — implements IStrategy by delegating to mcts::runMCTS.
+// CodinGame gives 1000ms on turn 1, 50ms after. We leave a margin.
+struct MctsStrategy : IStrategy {
+    vector<Action> decide(const GameState& gs) override {
+        int budget = (gs.turn == 0) ? 950 : 42;
+        return mcts::runMCTS(gs, budget);
+    }
+};
+
+// =============================================================
 // Layer 8 — SearchStrategy (lookahead-scored wrapper around FarmStrategy)
 // =============================================================
 //
