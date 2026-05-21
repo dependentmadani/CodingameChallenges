@@ -1214,6 +1214,56 @@ struct MacroAction {
         }
     }
 
+    // MOVE_AND_CHOP (saboteur) — up to 2 trees inside opp's farm radius.
+    // Denies their harvest infrastructure + their would-be wood. The
+    // chop-phase tree-value reward in the heuristic credits BOTH sides'
+    // tree progress (via 1.5+prog/dist split into my/op), so chopping
+    // an opp-side tree subtracts from opp's score while adding to ours
+    // — visible to MCTS. Pre-chop, the top-K-fruit-prox component
+    // already penalises opp's near-shack trees (we subtract their top-K
+    // from ours), so sabotage is also visible there.
+    //
+    // Candidate budget kept tight (2 max) so we don't blow up the per-
+    // troll macro list — DUCT search degrades when the branching factor
+    // explodes.
+    // Gate: only suggest sabotage when we already have ≥2 of our own
+    // trolls. The first troll's time is too precious — letting it run
+    // sabotage trips delays the first train and gives rival a free
+    // ramp-up window. Once we have a 2nd troll, sending one to opp's
+    // side is affordable.
+    int myTrollsHere = 0;
+    for (const auto& tr : gs.trolls) if (tr.owner == t.owner) myTrollsHere++;
+    if (t.chop > 0 && free > 0 && g_lookupsReady && myTrollsHere >= 2) {
+        const int oppX = gs.shackPos[1 - t.owner][0];
+        const int oppY = gs.shackPos[1 - t.owner][1];
+        constexpr int kSabRadius = 2;
+        std::vector<std::pair<int,int>> cands; // (dist-from-troll, treeIdx)
+        for (size_t i = 0; i < gs.trees.size(); i++) {
+            const Tree& tr = gs.trees[i];
+            if (tr.health <= 0) continue;
+            if (manhattan(tr.x, tr.y, oppX, oppY) > kSabRadius) continue;
+            int d = bfs_dist_lookup[t.y][t.x][tr.y][tr.x];
+            if (d < 0) continue;
+            cands.push_back({d, (int)i});
+        }
+        std::sort(cands.begin(), cands.end());
+        const int kMaxSabCandidates = 1;
+        int added = 0;
+        for (const auto& c : cands) {
+            if (added >= kMaxSabCandidates) break;
+            const Tree& tr = gs.trees[c.second];
+            // Dedupe against the regular MOVE_AND_CHOP candidate above.
+            bool already = false;
+            for (const auto& m : out) {
+                if (m.kind == MacroKind::MOVE_AND_CHOP
+                    && m.x == tr.x && m.y == tr.y) { already = true; break; }
+            }
+            if (already) continue;
+            out.push_back(MacroAction::MoveAndChop(t.id, tr.x, tr.y));
+            added++;
+        }
+    }
+
     // MOVE_AND_PLANT — for each fruit carried, nearest free plantable
     // cell (BFS dist ≤ 2 of own shack, no tree on it).
     if (g_lookupsReady && (t.carry.r[0] > 0 || t.carry.r[1] > 0
