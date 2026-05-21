@@ -1264,6 +1264,42 @@ struct MacroAction {
         }
     }
 
+    // MOVE_AND_CHOP (defender) — chop our own farm tree when an opp
+    // troll is adjacent. The tree is about to be killed by opp anyway
+    // (they'll grab the wood); racing them for the killing blow
+    // converts a guaranteed loss into a 50/50 wood split or full
+    // grab if we land the final hit first. Adds 1 candidate per
+    // threatened tree.
+    if (t.chop > 0 && free > 0 && g_lookupsReady) {
+        const int myX = gs.shackPos[t.owner][0];
+        const int myY = gs.shackPos[t.owner][1];
+        constexpr int kFarmRadius = 3;
+        for (size_t i = 0; i < gs.trees.size(); i++) {
+            const Tree& tr = gs.trees[i];
+            if (tr.health <= 0) continue;
+            if (manhattan(tr.x, tr.y, myX, myY) > kFarmRadius) continue;
+            // Is any opp troll adjacent to this farm tree?
+            bool threatened = false;
+            for (const auto& opp : gs.trolls) {
+                if (opp.owner == t.owner) continue;
+                if (manhattan(opp.x, opp.y, tr.x, tr.y) <= 1) {
+                    threatened = true; break;
+                }
+            }
+            if (!threatened) continue;
+            int d = bfs_dist_lookup[t.y][t.x][tr.y][tr.x];
+            if (d < 0) continue;
+            // Dedupe against earlier MOVE_AND_CHOP candidates.
+            bool already = false;
+            for (const auto& m : out) {
+                if (m.kind == MacroKind::MOVE_AND_CHOP
+                    && m.x == tr.x && m.y == tr.y) { already = true; break; }
+            }
+            if (already) continue;
+            out.push_back(MacroAction::MoveAndChop(t.id, tr.x, tr.y));
+        }
+    }
+
     // MOVE_AND_PLANT — for each fruit carried, nearest free plantable
     // cell (BFS dist ≤ 2 of own shack, no tree on it).
     if (g_lookupsReady && (t.carry.r[0] > 0 || t.carry.r[1] > 0
@@ -1418,7 +1454,7 @@ namespace mcts {
         for (const Troll& t : s.trolls) {
             if (t.owner != p) continue;
             trollCount++;
-            pts += 100.0; // per-troll bonus — drives MCTS to value training
+            pts += 200.0; // per-troll bonus — drives MCTS to value training
             // Carry-in-flight: only wood (the PICK-side asymmetry experiment
             // in v-farm-strategy-stable showed crediting carried fruits
             // discourages PICK-to-plant flows).
@@ -1439,7 +1475,7 @@ namespace mcts {
                           + std::min((double)inv[ResourceType::APPLE], cost)
                           + std::min((double)inv[ResourceType::IRON],  cost))
                          / (4.0 * cost);
-            pts += 80.0 * ready;
+            pts += 120.0 * ready;
         }
         return pts;
     };
