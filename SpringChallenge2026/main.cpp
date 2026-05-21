@@ -1375,9 +1375,13 @@ namespace mcts {
             pts += 2.0 * t.carry[ResourceType::WOOD];
         }
 
-        // Train-readiness 0..30: linear ratio of how close we are to the
-        // next tier-A train (cost N+a² with a=2 → N+4 per fruit/iron).
-        // Only meaningful while we're still trying to train.
+        // Train-readiness 0..80 against tier-A cost (N+4 each). Tried
+        // recipe-aware costs (L=11 for super-S2) — MCTS over-invested
+        // in lemons and delayed training. The tier-A "any train is
+        // good" gradient is the right shape. Also tried a separate
+        // lemon-redundancy +20/+50 bonus to drive a 2nd lemon tree —
+        // hurt mean delta in arena. Neither approach broke through
+        // the rival's cap=4 ceiling.
         if (stillTrain && trollCount < 4) {
             const double cost = trollCount + 4.0;
             double ready = (std::min((double)inv[ResourceType::PLUM],  cost)
