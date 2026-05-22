@@ -1196,7 +1196,10 @@ struct MacroAction {
         }
     }
 
-    // MOVE_AND_CHOP — nearest live tree (any type).
+    // MOVE_AND_CHOP — nearest live tree (any type). Tried top-3
+    // candidates to give MCTS bigger-tree options; branching factor
+    // explosion diluted training focus (mean dropped -25 → -114).
+    // Keeping single candidate.
     if (t.chop > 0 && free > 0) {
         int bestD = -1, bestIdx = -1;
         for (size_t i = 0; i < gs.trees.size(); i++) {
