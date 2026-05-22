@@ -1302,8 +1302,15 @@ struct MacroAction {
 
     // MOVE_AND_PLANT — for each fruit carried, nearest free plantable
     // cell (BFS dist ≤ 2 of own shack, no tree on it).
-    if (g_lookupsReady && (t.carry.r[0] > 0 || t.carry.r[1] > 0
-                        || t.carry.r[2] > 0 || t.carry.r[3] > 0)) {
+    //
+    // Tried gating to pre-chop only (in chop phase, DROP > PLANT for
+    // immediate +1 score) — arena vs boss regressed -38 → -134 mean.
+    // Boss-class opps need late-game plants to feed 4th-troll train
+    // resources and chop-phase tree-progress. Weak-opp case where we
+    // over-plant (27 vs 17) costs ~10 score but boss case is worse.
+    if (g_lookupsReady
+        && (t.carry.r[0] > 0 || t.carry.r[1] > 0
+         || t.carry.r[2] > 0 || t.carry.r[3] > 0)) {
         int bestD = -1, bestX = -1, bestY = -1;
         for (const auto& [cx, cy] : plantableCellsAroundShack[t.owner]) {
             // skip occupied cells
@@ -1695,9 +1702,9 @@ static int nodeCount = 0;
         return canAffordTrain(s, ms, cc, hv, cp);
     }
 
-    // Try recipe tier first.
-    int rms = 0, rcc = 0, rhv = 0, rcp = 0;
+    // Try recipe tier first (Y: A → super-S2 → super-Z).
     const int n = myTrollCount(s);
+    int rms = 0, rcc = 0, rhv = 0, rcp = 0;
     switch (n) {
         case 1: rms = 2; rcc = 2; rhv = 2; rcp = 2; break;  // tier A
         case 2: rms = 2; rcc = 3; rhv = 2; rcp = 2; break;  // super-S2
@@ -1707,6 +1714,27 @@ static int nodeCount = 0;
     if (canAffordTrain(s, rms, rcc, rhv, rcp)) {
         ms = rms; cc = rcc; hv = rhv; cp = rcp;
         return true;
+    }
+
+    // Option A fallback — OPP-MATCH. When the recipe isn't affordable
+    // (typical against weak opps where we conserved resources and didn't
+    // hit tier-A cost), and opp has more trolls than us, match opp's
+    // latest tier. This adapts our train spend to opp's strategy: vs
+    // weak bots training tier F (cheap, cost 8) we don't wait for our
+    // tier A (cost 20), keeping parity in action throughput.
+    int oppCount = 0;
+    const Troll* latestOpp = nullptr;
+    for (const auto& tr : s.trolls) {
+        if (tr.owner != 1) continue;
+        oppCount++;
+        if (!latestOpp || tr.id > latestOpp->id) latestOpp = &tr;
+    }
+    if (latestOpp && oppCount > n) {
+        ms = latestOpp->movSpeed;
+        cc = latestOpp->carryCap;
+        hv = latestOpp->harvest;
+        cp = latestOpp->chop;
+        if (canAffordTrain(s, ms, cc, hv, cp)) return true;
     }
 
     // Fix 2 fallback: tier C `1212`. Cheaper plum/apple than the
