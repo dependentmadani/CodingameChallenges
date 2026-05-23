@@ -3,7 +3,7 @@ main
 *png
 .claude
 test*
-tuner/results/
+tuner/results*/
 arena.cpp
 other_code.cpp
 old_main.cpp

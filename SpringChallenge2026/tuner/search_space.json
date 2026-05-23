@@ -1,60 +1,112 @@
 {
   "_comment": "Heuristic tuning search space. Each parameter has a pattern (unique substring in main.cpp), an old-value pattern to extract, and a list of candidate values. The tuner samples one value per parameter per trial.",
-
   "parameters": {
     "per_troll_bonus": {
       "anchor": "pts += {value}; // per-troll bonus",
       "old_value_regex": "pts \\+= ([0-9.]+); // per-troll bonus",
-      "values": [100, 150, 175, 200, 225, 250]
+      "values": [
+        100,
+        150,
+        175,
+        200,
+        225,
+        250
+      ]
     },
     "train_ready_bonus": {
       "anchor": "pts += {value} * ready;",
       "old_value_regex": "pts \\+= ([0-9.]+) \\* ready;",
-      "values": [60, 80, 100, 120, 150]
+      "values": [
+        60,
+        80,
+        100,
+        120,
+        150
+      ]
     },
     "carry_wood_bonus": {
       "anchor": "pts += {value} * t.carry[ResourceType::WOOD];",
       "old_value_regex": "pts \\+= ([0-9.]+) \\* t\\.carry\\[ResourceType::WOOD\\];",
-      "values": [1.0, 1.5, 2.0, 2.5, 3.0]
+      "values": [
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0
+      ]
     },
     "tree_val_water": {
       "anchor": "const double treeVal = water ? {value} : ",
       "old_value_regex": "const double treeVal = water \\? ([0-9.]+) : [0-9.]+;",
-      "values": [15.0, 20.0, 25.0, 30.0, 40.0]
+      "values": [
+        20.0,
+        30.0,
+        40.0,
+        55.0,
+        70.0
+      ]
     },
     "tree_val_normal": {
       "anchor": ": {value};",
       "anchor_context": "const double treeVal = water ?",
       "old_value_regex": "const double treeVal = water \\? [0-9.]+ : ([0-9.]+);",
-      "values": [10.0, 12.0, 15.0, 20.0, 25.0]
+      "values": [
+        12.0,
+        18.0,
+        25.0,
+        35.0,
+        45.0
+      ]
     },
     "opp_decay": {
       "anchor": "op += {value} * turnsElapsed;",
       "old_value_regex": "op \\+= ([0-9.]+) \\* turnsElapsed;",
-      "values": [0.05, 0.1, 0.15, 0.2, 0.3]
+      "values": [
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.3
+      ]
     },
     "uct_c": {
       "anchor": "constexpr double UCT_C = {value};",
       "old_value_regex": "constexpr double UCT_C = ([0-9.]+);",
-      "values": [1.0, 1.2, 1.41421356, 1.6, 1.8, 2.0]
+      "values": [
+        1.0,
+        1.2,
+        1.41421356,
+        1.6,
+        1.8,
+        2.0
+      ]
     },
     "max_nodes": {
       "anchor": "constexpr int MAX_NODES = {value};",
       "old_value_regex": "constexpr int MAX_NODES = ([0-9]+);",
-      "values": [4096, 8192, 16384, 32768]
+      "values": [
+        4096,
+        8192,
+        16384,
+        32768
+      ]
     },
     "budget_ms": {
       "anchor": "int budget = (gs.turn == 0) ? 950 : {value};",
       "old_value_regex": "int budget = \\(gs\\.turn == 0\\) \\? 950 : ([0-9]+);",
-      "values": [38, 42, 45, 48]
+      "values": [
+        38,
+        42,
+        45,
+        48
+      ]
     }
   },
-
   "tuning": {
     "trials": 60,
     "games_per_trial": 8,
     "compile_timeout_sec": 60,
     "game_timeout_sec": 30,
-    "random_seed": 42
+    "random_seed": 1234
   }
 }
