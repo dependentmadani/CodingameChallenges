@@ -1196,10 +1196,14 @@ struct MacroAction {
         }
     }
 
-    // MOVE_AND_CHOP — nearest live tree (any type). Tried top-3
-    // candidates to give MCTS bigger-tree options; branching factor
-    // explosion diluted training focus (mean dropped -25 → -114).
-    // Keeping single candidate.
+    // MOVE_AND_CHOP — nearest live tree (any type).
+    // Tried emitting top-2 candidates for anti-clumping (gold log showed
+    // 13 cap=1 hauls = wood split among trolls), but it regressed the
+    // 16-game multi-map score from +6 to -60. Extra per-troll candidate
+    // dilutes MCTS search even with the stronger per-troll bonus from
+    // the multi-map tuner. Keeping single candidate; clumping is real
+    // but the cost of mitigating it via candidate diversity outweighs
+    // the benefit at current iter counts.
     if (t.chop > 0 && free > 0) {
         int bestD = -1, bestIdx = -1;
         for (size_t i = 0; i < gs.trees.size(); i++) {
