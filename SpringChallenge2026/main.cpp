@@ -1464,11 +1464,11 @@ namespace mcts {
         for (const Troll& t : s.trolls) {
             if (t.owner != p) continue;
             trollCount++;
-            pts += 200.0; // per-troll bonus — drives MCTS to value training
+            pts += 250.0; // per-troll bonus — drives MCTS to value training
             // Carry-in-flight: only wood (the PICK-side asymmetry experiment
             // in v-farm-strategy-stable showed crediting carried fruits
             // discourages PICK-to-plant flows).
-            pts += 2.0 * t.carry[ResourceType::WOOD];
+            pts += 3.0 * t.carry[ResourceType::WOOD];
         }
 
         // Train-readiness 0..80 against tier-A cost (N+4 each). Tried
@@ -1485,7 +1485,7 @@ namespace mcts {
                           + std::min((double)inv[ResourceType::APPLE], cost)
                           + std::min((double)inv[ResourceType::IRON],  cost))
                          / (4.0 * cost);
-            pts += 120.0 * ready;
+            pts += 150.0 * ready;
         }
         return pts;
     };
@@ -1534,7 +1534,7 @@ namespace mcts {
             // on a /4000 scale, we're raw-game-score. Top-K total budget
             // capped to ~150 (6 slots × 25) so the trunk and per-troll
             // bonus aren't drowned out by static tree-proximity.
-            const double treeVal = water ? 25.0 : 15.0;
+            const double treeVal = water ? 20.0 : 12.0;
             insertTopK(bestMy[idx], treeVal / (double)dMy);
             insertTopK(bestOp[idx], treeVal / (double)dOp);
         }
@@ -1569,14 +1569,14 @@ namespace mcts {
     // Without it MCTS would value plans that depend on opp doing nothing
     // for many turns. Scaled to our raw-game-score units.
     int turnsElapsed = std::max(0, s.turn - g_rootTurn);
-    op += 0.1 * turnsElapsed;
+    op += 0.15 * turnsElapsed;
 
     return my - op;
 }
 
 // ----- node pool ---------------------------------------------------
 
-constexpr int MAX_NODES = 8192;
+constexpr int MAX_NODES = 4096;
 constexpr int MAX_TROLLS_PER_SIDE = 8;
 
 struct TrollActionStat {
@@ -1839,7 +1839,7 @@ static int nodeCount = 0;
     if (M == 0) return;
 
     double logN = node->visits > 0 ? std::log((double)node->visits) : 0.0;
-    constexpr double UCT_C = 1.41421356;
+    constexpr double UCT_C = 1.2;
 
     vector<int> chosenSoFar;
     chosenSoFar.reserve(M);
@@ -2179,7 +2179,7 @@ struct TrollPriorSnapshot {
 // CodinGame gives 1000ms on turn 1, 50ms after. We leave a margin.
 struct MctsStrategy : IStrategy {
     vector<Action> decide(const GameState& gs) override {
-        int budget = (gs.turn == 0) ? 950 : 42;
+        int budget = (gs.turn == 0) ? 950 : 45;
         vector<Action> primitives = mcts::runMCTS(gs, budget);
 
         // Fix 1 — force-train guard. If the recipe says we should train
