@@ -1349,6 +1349,14 @@ struct MacroAction {
         }
         if (bestX >= 0) {
             // PICK: only if empty-handed and shack has the fruit.
+            // Tried excluding BANANA (suspected PICK→DROP loops in
+            // gold-log against Boss 5) but it regressed mean +13 → -63
+            // across 16 games — banana plants are productive chop
+            // fodder for wood points, and removing them from the pick
+            // candidate list robbed the bot of a real strategic option.
+            // The visible PICK→DROP "loops" in some games are MCTS
+            // exploring the space; the heuristic does converge to
+            // commits when carry-plant payoff is clear.
             if (t.carry.total() == 0) {
                 for (int f = 0; f < FRUIT_COUNT; f++) {
                     if (gs.shack[t.owner].r[f] > 0)
@@ -1356,7 +1364,6 @@ struct MacroAction {
                             t.id, bestX, bestY, (FruitType)f));
                 }
             }
-            // DROP: only if carrying something.
             if (t.carry.total() > 0)
                 out.push_back(MacroAction::MoveAndDrop(t.id, bestX, bestY));
         }
