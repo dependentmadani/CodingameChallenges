@@ -95,32 +95,49 @@ def compile_bot(src_path: Path, bin_path: Path, timeout: int = 60) -> tuple[bool
     return True, ""
 
 
-def run_one_game(timeout: int = 30) -> tuple[bool, int]:
-    """Run a single arena game. Returns (ok, delta_us_minus_rival)."""
+def run_one_game(map_id: int = 0, inv_id: int = 0, timeout: int = 30) -> tuple[bool, int]:
+    """Run a single arena game on the given map/inv combo. Returns
+    (ok, delta_us_minus_rival)."""
+    cmd = [str(ARENA_PATH), str(BOT_PATH), str(RIVAL_PATH), "300",
+           "--map", str(map_id), "--inv", str(inv_id)]
     try:
-        proc = subprocess.run(
-            [str(ARENA_PATH), str(BOT_PATH), str(RIVAL_PATH), "300"],
-            capture_output=True, text=True, timeout=timeout,
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, 0
     if proc.returncode != 0:
         return False, 0
-    # arena prints "delta: N (WIN|LOSE|TIE)"
     m = re.search(r"^delta:\s*(-?\d+)", proc.stdout, re.MULTILINE)
     if not m:
         return False, 0
     return True, int(m.group(1))
 
 
-def run_trial_games(n: int, timeout: int) -> list[int]:
+# Multi-map game generator. Cycles through (map, inv) combos so each
+# trial sees diverse starting conditions — reduces overfitting to the
+# specific image_3 layout. 8 combos × 2 games = 16 games per trial.
+MAP_INV_COMBOS = [
+    (0, 0), (0, 1), (0, 2), (0, 3),  # original map, 4 inv variants
+    (1, 0), (1, 1), (1, 2), (1, 3),  # mirrored map, 4 inv variants
+]
+
+def run_trial_games(n_total: int, timeout: int) -> tuple[list[int], list[dict]]:
+    """Distribute n_total games across the map/inv combos. Returns
+    (deltas, per_game_meta) where per_game_meta logs which combo each
+    delta came from so we can spot map-specific weaknesses post-hoc."""
     deltas: list[int] = []
-    for _ in range(n):
-        ok, d = run_one_game(timeout=timeout)
-        if not ok:
-            continue
-        deltas.append(d)
-    return deltas
+    meta: list[dict] = []
+    n_combos = len(MAP_INV_COMBOS)
+    games_per_combo = max(1, n_total // n_combos)
+    # Run round-robin across combos
+    for combo_idx, (map_id, inv_id) in enumerate(MAP_INV_COMBOS):
+        for _ in range(games_per_combo):
+            ok, d = run_one_game(map_id=map_id, inv_id=inv_id, timeout=timeout)
+            if ok:
+                deltas.append(d)
+                meta.append({"map": map_id, "inv": inv_id, "delta": d})
+            if len(deltas) >= n_total:
+                return deltas, meta
+    return deltas, meta
 
 
 # ---- search ----
@@ -235,9 +252,9 @@ def main() -> int:
             continue
         compile_time = time.time() - t0
 
-        # Run games
+        # Run games (multi-map: cycles through map/inv combos)
         t1 = time.time()
-        deltas = run_trial_games(games_per, timeout=game_to)
+        deltas, meta = run_trial_games(games_per, timeout=game_to)
         game_time = time.time() - t1
 
         if not deltas:
@@ -254,14 +271,17 @@ def main() -> int:
         mean   = statistics.mean(deltas)
         stdev  = statistics.stdev(deltas) if len(deltas) > 1 else 0.0
 
-        # Score: mean delta + bonus for wins (lexicographic-ish via constant)
-        # so a config that has e.g. 4 wins / mean -10 beats 0 wins / mean +5.
+        # Score: mean delta + bonus for wins. A config that wins on
+        # multiple maps gets a stronger signal than one that wins only
+        # on the easiest combo, so the bonus stays proportional to
+        # total wins across diverse conditions.
         score = mean + 20.0 * wins
 
         row = {
             "trial":         trial + 1,
             "config":        config,
             "deltas":        deltas,
+            "per_game":      meta,
             "wins":          wins,
             "losses":        losses,
             "ties":          ties,
