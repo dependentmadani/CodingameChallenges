@@ -1902,6 +1902,11 @@ static int nodeCount = 0;
 }
 
 // Apply a joint action via stepMacros and return (or create) the child.
+// We treat opp as STATIC during MCTS rollouts (no opp policy). Tried
+// a greedy-chop opp policy — net regression (mean -25 → -82, occasional
+// catastrophic runs where MCTS "panicked" under pessimistic opp model).
+// The 0.1/turn opp-decay term in the heuristic absorbs the static-opp
+// modeling bias adequately.
 [[maybe_unused]] static Node* expand(Node* node, const vector<int>& idx, uint64_t key) {
     if (Node* existing = findChild(node, key)) return existing;
 
@@ -1909,12 +1914,10 @@ static int nodeCount = 0;
     if (!child) return node;  // pool exhausted — re-evaluate at this node
 
     child->state = node->state;
-    // Build my plan (with optional train) and opp's empty plan.
     vector<MacroAction> myPlan, oppPlan;
     jointToPlan(node, idx, myPlan);
     child->state = stepMacros(child->state, myPlan, oppPlan);
 
-    // Carry unfinished macros forward into the child's base.
     for (const auto& m : myPlan) if (!m.finished) child->baseMy.push_back(m);
     for (const auto& m : oppPlan) if (!m.finished) child->baseOpp.push_back(m);
 
