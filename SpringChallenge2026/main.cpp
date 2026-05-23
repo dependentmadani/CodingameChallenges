@@ -1705,18 +1705,35 @@ static int nodeCount = 0;
         return canAffordTrain(s, ms, cc, hv, cp);
     }
 
-    // Try recipe tier first (Y: A → super-S2 → super-Z).
+    // Try recipe tier first (A → super-chopper → super-Z).
+    // 2nd troll preference: super-chopper `(2,2,0,3)` mimics Boss 5's
+    // tier. Chop=3 kills trees ~50% faster than cap=2 chop=2 → closes
+    // the wood production gap that lost us gold-league boss games.
+    // Cost iron N+9 = 10 at N=1: needs ~4 turns of mining from starter
+    // troll before train. Trade slower train timing for stronger troll.
     const int n = myTrollCount(s);
     int rms = 0, rcc = 0, rhv = 0, rcp = 0;
     switch (n) {
         case 1: rms = 2; rcc = 2; rhv = 2; rcp = 2; break;  // tier A
-        case 2: rms = 2; rcc = 3; rhv = 2; rcp = 2; break;  // super-S2
+        case 2: rms = 2; rcc = 2; rhv = 0; rcp = 3; break;  // super-chopper (was super-S2)
         case 3: rms = 3; rcc = 4; rhv = 1; rcp = 2; break;  // super-Z
         default: return false;
     }
     if (canAffordTrain(s, rms, rcc, rhv, rcp)) {
         ms = rms; cc = rcc; hv = rhv; cp = rcp;
         return true;
+    }
+
+    // Recipe secondary — for troll 2, try super-S2 if super-chopper's
+    // iron-heavy cost (I=N+9) can't be met. Super-S2 needs L=N+9 (just
+    // as expensive in lemons), but on iron-light maps lemon supply may
+    // grow faster than iron does.
+    if (n == 2) {
+        rms = 2; rcc = 3; rhv = 2; rcp = 2;  // super-S2 secondary
+        if (canAffordTrain(s, rms, rcc, rhv, rcp)) {
+            ms = rms; cc = rcc; hv = rhv; cp = rcp;
+            return true;
+        }
     }
 
     // Option A fallback — OPP-MATCH. When the recipe isn't affordable
