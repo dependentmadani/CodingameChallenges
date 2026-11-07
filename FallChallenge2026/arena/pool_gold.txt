@@ -1,0 +1,9 @@
+# opponents for SPSA --pool (one command per line); v1b left out: we beat it ~90%, little signal
+./bot_v1f time 17
+./bot_v2w time 17
+./bot_v3c_a1 time 17
+./bot_v3g_f time 17
+./bot_v3g_f time 17 atkcost 4
+./bot_v3g_f time 17 inf 4
+./bot_v3g_f time 17 inf 0.5
+./bot_v3i_a time 17 guard 0.5

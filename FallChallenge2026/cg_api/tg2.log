@@ -1,0 +1,303 @@
+game 916306372
+options: seed=514250168662605950
+    units=0,0_0,0_0,1_1,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_1,0_0,1_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_0,0_1,0_0,1
+    edges=0,10_0,12_0,16_0,21_0,25_0,33_1,11_1,13_1,17_1,20_1,24_1,32_2,13_2,28_3,12_3,29_4,5_4,15_4,20_4,40_4,41_5,14_5,21_5,40_5,41_6,8_6,27_6,31_6,36_7,9_7,26_7,30_7,37_8,27_8,34_9,26_9,35_10,30_11,31_12,25_13,24_14,16_14,18_14,21_14,34_15,17_15,19_15,20_15,35_16,21_16,33_16,38_17,20_17,32_17,39_18,34_18,36_18,41_19,35_19,37_19,40_20,23_21,22_22,30_22,37_22,40_23,31_23,36_23,41_24,32_25,33_26,42_27,43_28,31_28,43_29,30_29,42_34,36_34,38_35,37_35,39_36,41_37,40
+    nodes=433,721_1486,238_1799,414_120,545_916,331_1003,628_1504,738_415,221_1437,873_482,86_447,547_1472,412_204,808_1715,151_890,750_1029,209_657,752_1262,207_1130,716_789,243_1214,342_705,617_562,452_1357,507_1567,77_352,882_136,119_1783,840_1740,598_179,361_276,589_1643,370_1424,87_495,872_1117,888_802,71_1287,640_632,319_916,889_1003,70_703,463_1216,496_80,261_1839,698
+agents:
+  0 NOIIICE (me, agent_id -1)
+  1 DomiKo (agent_id 6840512, rank 1)
+frame 0
+frame 1 agent 0
+  stderr: eval myTri 0 opTri 0 units 3/3 pot 0.360134 thr 0 killed 0/0
+      turn 1 iters 2720/5720 t 201.151
+  stdout: MOVE 3 29 1;MOVE 26 9 1;MOVE 42 26 1
+frame 2 agent 1
+  stdout: MOVE 2 28 1;MOVE 27 8 1;MOVE 43 27 1;MSG t18.0 m0.0 e23
+frame 3 agent 0
+  stderr: eval myTri 1 opTri 1 units 3/3 pot 0.166413 thr 0 killed 0/0
+      turn 2 iters 528/1032 t 41.1195
+  stdout: MOVE 26 7 1;MOVE 29 42 1
+frame 4 agent 1
+  stdout: MOVE 27 6 1;MOVE 28 43 1;MSG t2.5 m2.5 e8
+frame 5 agent 0
+  summary: $0 captured 1 triangle
+      $1 captured 1 triangle
+frame 6 agent 0
+  stderr: eval myTri 0 opTri 0 units 4/4 pot 0.827037 thr 0 killed 0/0
+      turn 3 iters 504/1072 t 40.0817
+  stdout: MOVE 7 37 1;MOVE 9 35 1;MOVE 42 29 1;SPAWN 7 9 26
+frame 7 agent 1
+  stdout: SPAWN 8 6 27;MOVE 6 36 1;MOVE 8 34 1;MOVE 43 28 1;MSG t3.3 m3.3 e12
+frame 8 agent 0
+  summary: $0 spawned 1 unit
+      $1 spawned 1 unit
+frame 9 agent 0
+  stderr: eval myTri 1 opTri 1 units 4/4 pot 1.32532 thr 0 killed 0/0
+      turn 4 iters 464/976 t 40.5724
+  stdout: MOVE 7 37 1;MOVE 29 30 1;MOVE 35 19 1;MOVE 37 40 1
+frame 10 agent 1
+  stdout: MOVE 8 34 1;MOVE 28 31 1;MOVE 34 14 1;MOVE 36 18 1;MSG t2.9 m3.3 e10
+frame 11 agent 0
+  summary: $0 captured 1 triangle
+      $1 captured 1 triangle
+frame 12 agent 0
+  stderr: eval myTri 3 opTri 3 units 5/5 pot 0.824162 thr 0 killed 0/0
+      turn 5 iters 504/1024 t 40.6514
+  stdout: MOVE 19 15 1;MOVE 30 22 1;MOVE 37 35 1;MOVE 40 37 1;SPAWN 40 19 37
+frame 13 agent 1
+  stdout: SPAWN 34 14 18;MOVE 18 41 1;MOVE 31 23 1;MOVE 34 36 1;MSG t3.1 m3.3 e11
+frame 14 agent 0
+  summary: $0 spawned 1 unit
+      $1 spawned 1 unit
+frame 15 agent 0
+  summary: $0 captured 3 triangles
+      $1 captured 3 triangles
+frame 16 agent 0
+  stderr: eval myTri 0 opTri 0 units 8/8 pot 2.08481 thr 0 killed 0/0
+      turn 6 iters 480/1016 t 41.2821
+  stdout: MOVE 15 20 1;MOVE 22 21 1;MOVE 35 15 1;MOVE 37 22 1;MOVE 40 4 1;SPAWN 15 19 35;SPAWN 35 37 19;SPAWN 22 37 40
+frame 17 agent 1
+  stdout: SPAWN 34 18 36;SPAWN 41 18 36;SPAWN 23 36 41;MOVE 14 16 1;MOVE 23 20 1;MOVE 34 8 1;MOVE 41 5 1;MSG t12.8 m12.8 e56
+frame 18 agent 0
+  summary: $0 spawned 3 units
+      $1 spawned 3 units
+frame 19 agent 0
+  stderr: eval myTri 1 opTri 1 units 8/8 pot 2.83649 thr 0 killed 0/0
+      turn 7 iters 456/912 t 41.1698
+  stdout: MOVE 4 20 1;MOVE 15 20 1;MOVE 20 17 1;MOVE 21 14 1;MOVE 22 21 2;MOVE 35 15 1
+frame 20 agent 1
+  stdout: MOVE 8 27 1;MOVE 16 21 1;MOVE 23 20 1;MOVE 34 8 1;MOVE 36 6 1;MOVE 41 5 1;MSG t12.9 m12.9 e56
+frame 21 agent 0
+  summary: $1 captured 1 triangle
+frame 22 agent 0
+  stderr: eval myTri 0 opTri 0 units 8/9 pot 3.78603 thr 0 killed 0/0
+      turn 8 iters 424/960 t 41.2577
+  stdout: MOVE 14 21 1;MOVE 15 17 1;MOVE 15 20 1;MOVE 17 32 1;MOVE 20 1 1;MOVE 20 4 1;MOVE 21 0 1;MOVE 21 14 1
+frame 23 agent 1
+  stdout: SPAWN 6 8 27;MOVE 5 40 1;MOVE 6 36 1;MOVE 8 34 1;MOVE 20 4 2;MOVE 27 8 1;MSG t15.2 m15.2 e66
+frame 24 agent 0
+  summary: $1 spawned 1 unit
+frame 25 agent 0
+  summary: $0 captured 2 triangles
+      $1 captured 1 triangle
+frame 26 agent 0
+  stderr: eval myTri 1 opTri 0 units 10/10 pot 1.8421 thr 0 killed 0/0
+      turn 9 iters 440/824 t 41.249
+  stdout: MOVE 0 21 1;MOVE 1 24 1;MOVE 4 41 1;MOVE 14 34 1;MOVE 17 20 1;MOVE 20 15 1;MOVE 21 22 1;MOVE 32 17 1;SPAWN 20 1 17;SPAWN 1 17 32
+frame 27 agent 1
+  stdout: SPAWN 4 5 40;MOVE 4 15 1;MOVE 4 41 1;MOVE 5 14 1;MOVE 6 36 1;MOVE 8 34 1;MOVE 21 14 1;MOVE 36 41 1;MOVE 40 5 1;MSG t15.3 m15.3 e67
+frame 28 agent 0
+  summary: $0 spawned 2 units
+      $1 spawned 1 unit
+frame 29 agent 0
+  summary: $0 captured 1 triangle
+      $1 captured 4 triangles
+frame 30 agent 0
+  stderr: eval myTri 0 opTri 0 units 11/14 pot 4.04292 thr 0 killed 0/0
+      turn 10 iters 424/864 t 41.1313
+  stdout: MOVE 1 11 1;MOVE 15 35 1;MOVE 17 15 1;MOVE 20 4 1;MOVE 20 15 1;MOVE 21 14 1;MOVE 22 40 1;MOVE 34 36 1;MOVE 41 36 1;SPAWN 24 32 1
+frame 31 agent 1
+  stdout: SPAWN 5 4 41;SPAWN 14 18 34;SPAWN 36 18 34;SPAWN 41 18 36;MOVE 4 40 1;MOVE 5 21 1;MOVE 14 21 2;MOVE 34 14 2;MOVE 36 23 1;MOVE 41 4 1;MOVE 41 23 1;MSG t17.9 m17.9 e81
+frame 32 agent 0
+  summary: $0 spawned 1 unit
+      $1 spawned 4 units
+frame 33 agent 0
+  summary: $1 captured 1 triangle
+frame 34 agent 0
+  stderr: eval myTri 5 opTri 0 units 11/13 pot 1.45822 thr 0 killed 0/2
+      turn 11 iters 432/880 t 41.1878
+  stdout: MOVE 4 5 1;MOVE 11 1 1;MOVE 14 21 1;MOVE 15 4 1;MOVE 15 17 1;MOVE 24 13 1;MOVE 24 32 1;MOVE 35 15 1;MOVE 36 23 1;MOVE 40 37 1
+frame 35 agent 1
+  stdout: SPAWN 21 5 14;MOVE 4 15 1;MOVE 5 4 1;MOVE 14 16 2;MOVE 21 0 2;MOVE 23 36 1;MOVE 23 41 1;MOVE 40 19 1;MOVE 41 23 1;MSG t28.4 m28.4 e126
+frame 36 agent 0
+  summary: $1 spawned 1 unit
+frame 37 agent 0
+  summary: $0 captured 2 triangles
+      $1 captured 2 triangles
+frame 38 agent 0
+  stderr: eval myTri 3 opTri 0 units 13/17 pot 1.09557 thr 1 killed 0/0
+      turn 12 iters 408/904 t 40.0825
+  stdout: MOVE 1 20 1;MOVE 4 40 1;MOVE 13 1 1;MOVE 15 4 1;MOVE 17 20 1;MOVE 21 0 1;MOVE 23 41 1;MOVE 32 17 1;MOVE 36 41 1;MOVE 37 40 1;SPAWN 1 13 24;SPAWN 17 32 1
+frame 39 agent 1
+  stdout: SPAWN 16 0 21;SPAWN 16 14 21;MOVE 0 12 1;MOVE 0 25 1;MOVE 4 15 1;MOVE 15 17 2;MOVE 16 0 2;MOVE 19 15 1;MOVE 21 5 2;MOVE 36 6 1;MOVE 36 23 1;MOVE 41 4 1;MSG t20.4 m28.4 e88
+frame 40 agent 0
+  summary: $0 spawned 2 units
+      $1 spawned 2 units
+frame 41 agent 0
+  summary: $1 captured 3 triangles
+frame 42 agent 0
+  stderr: eval myTri 0 opTri 0 units 13/20 pot 2.48398 thr 0 killed 0/0
+      turn 13 iters 408/912 t 40.8604
+  stdout: MOVE 1 17 1;MOVE 1 20 1;MOVE 17 15 1;MOVE 20 23 1;MOVE 41 18 1
+frame 43 agent 1
+  stdout: SPAWN 12 0 25;SPAWN 16 0 33;SPAWN 0 25 33;MOVE 0 21 2;MOVE 4 40 1;MOVE 5 41 1;MOVE 6 36 1;MOVE 12 3 1;MOVE 14 5 1;MOVE 15 20 1;MOVE 16 14 2;MOVE 17 15 1;MOVE 17 39 1;MOVE 23 41 1;MOVE 25 0 1;MSG t41.8 m41.8 e187
+frame 44 agent 0
+  summary: $1 spawned 3 units
+frame 45 agent 0
+  stderr: eval myTri 0 opTri 0 units 13/20 pot 2.40345 thr 0 killed 0/0
+      turn 14 iters 408/864 t 41.3168
+  stdout: MOVE 0 16 1;MOVE 4 40 1;MOVE 5 40 1;MOVE 15 19 1;MOVE 17 15 1;MOVE 17 39 1;MOVE 18 14 1;MOVE 20 15 1;MOVE 23 36 1;MOVE 40 22 1;MOVE 40 37 1;MOVE 41 36 1
+frame 46 agent 1
+  stdout: MOVE 0 21 2;MOVE 3 29 1;MOVE 5 4 1;MOVE 5 41 1;MOVE 12 25 1;MOVE 14 18 1;MOVE 14 34 1;MOVE 15 4 1;MOVE 15 35 1;MOVE 16 14 1;MOVE 20 15 1;MOVE 21 5 1;MOVE 21 22 1;MOVE 39 17 1;MOVE 40 19 1;MOVE 41 18 1;MOVE 41 36 1;MSG t35.7 m41.8 e159
+frame 47 agent 0
+  summary: $1 surrounded 1 unit
+frame 48 agent 0
+  stderr: eval myTri 2 opTri 0 units 12/20 pot 1.41641 thr 0 killed 0/0
+      turn 15 iters 432/904 t 40.5674
+  stdout: MOVE 14 34 1;MOVE 15 35 1;MOVE 19 15 1;MOVE 20 4 1;MOVE 22 37 1;MOVE 36 23 1;MOVE 36 41 1;MOVE 40 19 1
+frame 49 agent 1
+  stdout: MOVE 4 15 1;MOVE 4 20 1;MOVE 5 40 1;MOVE 14 18 1;MOVE 15 19 1;MOVE 17 1 1;MOVE 18 34 1;MOVE 18 41 1;MOVE 19 15 1;MOVE 21 22 2;MOVE 22 37 1;MOVE 23 20 1;MOVE 25 33 1;MOVE 29 30 1;MOVE 34 36 1;MOVE 36 6 1;MOVE 36 34 1;MOVE 41 23 1;MSG t32.3 m41.8 e141
+frame 50 agent 0
+  summary: $1 captured 1 triangle
+frame 51 agent 0
+  stderr: eval myTri 0 opTri 1 units 12/21 pot 1.78144 thr 0 killed 0/0
+      turn 16 iters 384/808 t 41.2456
+  stdout: MOVE 4 41 1;MOVE 15 17 1;MOVE 15 19 1;MOVE 16 21 1;MOVE 19 35 1;MOVE 23 36 1;MOVE 34 8 1;MOVE 35 37 1;MOVE 37 40 1;MOVE 40 19 1;MOVE 41 18 1
+frame 52 agent 1
+  stdout: SPAWN 36 18 34;MOVE 1 17 1;MOVE 6 27 1;MOVE 15 4 1;MOVE 15 20 1;MOVE 18 36 1;MOVE 19 40 1;MOVE 20 15 1;MOVE 20 17 1;MOVE 22 21 1;MOVE 22 40 1;MOVE 23 20 1;MOVE 30 22 1;MOVE 33 16 1;MOVE 34 14 1;MOVE 34 18 1;MOVE 36 23 1;MOVE 37 19 1;MOVE 40 4 1;MOVE 41 5 1;MSG t41.8 m41.8 e185
+frame 53 agent 0
+  summary: $1 spawned 1 unit
+frame 54 agent 0
+  summary: $1 captured 2 triangles
+frame 55 agent 0
+  stderr: eval myTri 0 opTri 0 units 12/22 pot 2.58281 thr 0 killed 0/1
+      turn 17 iters 384/832 t 40.4152
+  stdout: MOVE 8 34 1;MOVE 19 15 1;MOVE 19 37 1;MOVE 21 14 1;MOVE 36 41 1;MOVE 37 19 1;MOVE 37 35 1;MOVE 40 22 1;MOVE 41 36 1
+frame 56 agent 1
+  stdout: SPAWN 4 15 20;SPAWN 20 15 17;MOVE 4 40 1;MOVE 4 41 1;MOVE 5 41 1;MOVE 14 34 1;MOVE 15 35 1;MOVE 16 21 1;MOVE 17 15 2;MOVE 19 35 1;MOVE 20 17 1;MOVE 20 23 1;MOVE 21 14 1;MOVE 22 37 1;MOVE 23 31 1;MOVE 27 6 1;MOVE 36 34 1;MOVE 40 4 2;MSG t41.9 m41.9 e184
+frame 57 agent 0
+  summary: $1 spawned 2 units
+frame 58 agent 0
+  stderr: eval myTri 0 opTri 0 units 12/23 pot 1.82981 thr 0 killed 0/0
+      turn 18 iters 384/848 t 40.546
+  stdout: MOVE 15 20 1;MOVE 17 15 1;MOVE 18 14 1;MOVE 19 35 1;MOVE 34 18 1;MOVE 35 15 2;MOVE 36 41 1;MOVE 41 23 1
+frame 59 agent 1
+  stdout: MOVE 4 5 1;MOVE 4 20 1;MOVE 4 40 1;MOVE 14 34 1;MOVE 15 17 1;MOVE 15 35 1;MOVE 18 14 1;MOVE 20 15 1;MOVE 34 18 1;MOVE 35 19 1;MOVE 35 37 1;MOVE 35 39 1;MOVE 36 18 1;MOVE 37 22 1;MOVE 40 4 1;MOVE 41 18 1;MSG t41.9 m41.9 e187
+frame 60 agent 0
+  stderr: eval myTri 0 opTri 0 units 12/23 pot 1.57462 thr 0 killed 0/0
+      turn 19 iters 384/880 t 40.8637
+  stdout: MOVE 14 21 1;MOVE 15 4 1;MOVE 15 35 1;MOVE 18 36 1;MOVE 20 1 1;MOVE 22 40 1;MOVE 23 20 1;MOVE 35 15 1;MOVE 37 19 1;MOVE 41 23 1
+frame 61 agent 1
+  stdout: MOVE 4 15 1;MOVE 5 21 1;MOVE 6 27 1;MOVE 14 16 1;MOVE 15 17 1;MOVE 17 1 1;MOVE 17 15 1;MOVE 18 14 1;MOVE 18 34 1;MOVE 19 37 1;MOVE 21 22 1;MOVE 22 40 1;MOVE 23 41 1;MOVE 31 23 1;MOVE 34 36 2;MOVE 35 19 1;MOVE 37 19 1;MOVE 39 35 1;MOVE 40 37 1;MOVE 41 5 1;MSG t40.3 m41.9 e178
+frame 62 agent 0
+  summary: $1 captured 1 triangle
+frame 63 agent 0
+  stderr: eval myTri 0 opTri 0 units 12/24 pot 1.93623 thr 0 killed 0/0
+      turn 20 iters 384/832 t 41.0433
+  stdout: MOVE 1 17 1;MOVE 4 5 1;MOVE 14 21 1;MOVE 15 17 1;MOVE 15 35 1;MOVE 19 37 1;MOVE 20 1 1;MOVE 21 14 1;MOVE 35 37 1;MOVE 36 6 1;MOVE 40 37 1
+frame 64 agent 1
+  stdout: SPAWN 18 36 41;MOVE 5 14 1;MOVE 14 21 1;MOVE 15 4 1;MOVE 15 19 1;MOVE 16 21 1;MOVE 17 20 1;MOVE 18 41 1;MOVE 19 15 1;MOVE 19 37 1;MOVE 21 16 1;MOVE 23 20 1;MOVE 27 6 1;MOVE 34 38 1;MOVE 36 34 1;MOVE 41 5 1;MSG t41.8 m41.9 e186
+frame 65 agent 0
+  summary: $1 spawned 1 unit
+frame 66 agent 0
+  stderr: eval myTri 0 opTri 0 units 12/24 pot 2.04348 thr 0 killed 0/0
+      turn 21 iters 384/904 t 40.4801
+  stdout: MOVE 1 17 1;MOVE 5 14 1;MOVE 6 36 1;MOVE 14 34 1;MOVE 17 20 1;MOVE 17 32 1;MOVE 21 0 1;MOVE 23 20 1;MOVE 35 19 1;MOVE 37 7 1;MOVE 37 40 1
+frame 67 agent 1
+  stdout: MOVE 4 15 1;MOVE 5 40 1;MOVE 6 31 1;MOVE 14 16 1;MOVE 15 20 1;MOVE 16 14 1;MOVE 18 14 1;MOVE 19 37 1;MOVE 20 1 1;MOVE 20 17 2;MOVE 21 0 1;MOVE 22 37 1;MOVE 34 8 1;MOVE 35 39 1;MOVE 36 34 1;MOVE 37 7 1;MOVE 37 19 1;MOVE 37 35 1;MOVE 40 22 1;MOVE 41 36 1;MSG t38.4 m41.9 e171
+frame 68 agent 0
+  summary: $1 captured 1 triangle
+frame 69 agent 0
+  stderr: eval myTri 0 opTri 0 units 12/25 pot 2.19514 thr 0 killed 0/0
+      turn 22 iters 360/856 t 41.3644
+  stdout: MOVE 0 21 1;MOVE 7 37 1;MOVE 14 21 1;MOVE 17 15 1;MOVE 19 35 1;MOVE 20 1 2;MOVE 32 24 1;MOVE 34 18 1;MOVE 36 6 1;MOVE 37 19 1;MOVE 40 22 1
+frame 70 agent 1
+  stdout: SPAWN 16 14 21;MOVE 0 25 1;MOVE 1 20 1;MOVE 1 24 1;MOVE 8 6 1;MOVE 14 5 1;MOVE 16 21 1;MOVE 17 1 1;MOVE 17 32 1;MOVE 19 15 1;MOVE 20 1 1;MOVE 21 16 1;MOVE 22 21 1;MOVE 31 6 1;MOVE 34 38 1;MOVE 36 23 1;MOVE 37 35 1;MOVE 37 40 1;MOVE 38 16 1;MOVE 39 17 1;MOVE 40 5 1;MSG t41.9 m41.9 e183
+frame 71 agent 0
+  summary: $1 spawned 1 unit
+frame 72 agent 0
+  stderr: eval myTri 0 opTri 0 units 12/25 pot 1.77406 thr 0 killed 0/0
+      turn 23 iters 368/888 t 41.2945
+  stdout: MOVE 1 17 1;MOVE 1 32 1;MOVE 15 4 1;MOVE 18 41 1;MOVE 21 0 1;MOVE 22 21 1;MOVE 24 13 1;MOVE 35 15 1;MOVE 37 40 1
+frame 73 agent 1
+  stdout: MOVE 1 24 1;MOVE 5 21 1;MOVE 5 41 1;MOVE 6 36 2;MOVE 7 37 1;MOVE 14 16 1;MOVE 15 17 1;MOVE 15 19 1;MOVE 16 0 1;MOVE 16 21 1;MOVE 16 33 1;MOVE 17 32 1;MOVE 20 23 1;MOVE 21 5 1;MOVE 21 22 1;MOVE 23 41 1;MOVE 24 1 1;MOVE 32 1 1;MOVE 35 37 1;MOVE 38 16 1;MSG t22.6 m41.9 e98
+frame 74 agent 0
+  summary: $1 captured 1 triangle
+frame 75 agent 0
+  stderr: eval myTri 0 opTri 1 units 12/26 pot 1.87667 thr 0 killed 0/0
+      turn 24 iters 392/848 t 41.3696
+  stdout: MOVE 4 15 1;MOVE 6 36 1;MOVE 13 1 1;MOVE 15 35 1;MOVE 17 1 1;MOVE 19 37 1;MOVE 21 0 1;MOVE 21 14 1;MOVE 32 17 1;MOVE 40 37 1;MOVE 41 18 1
+frame 76 agent 1
+  stdout: SPAWN 41 23 36;MOVE 1 17 1;MOVE 1 32 1;MOVE 5 40 1;MOVE 16 38 1;MOVE 17 20 1;MOVE 19 35 1;MOVE 21 0 1;MOVE 21 14 1;MOVE 22 37 1;MOVE 23 31 1;MOVE 25 0 1;MOVE 32 1 1;MOVE 33 25 1;MOVE 35 19 1;MOVE 36 34 1;MOVE 36 41 1;MOVE 37 22 1;MOVE 40 5 1;MOVE 41 36 2;MSG t39.6 m41.9 e173
+frame 77 agent 0
+  summary: $1 spawned 1 unit
+frame 78 agent 0
+  summary: $1 captured 2 triangles
+frame 79 agent 0
+  stderr: eval myTri 0 opTri 2 units 12/28 pot 2.05912 thr 0 killed 0/0
+      turn 25 iters 392/888 t 40.7689
+  stdout: MOVE 0 16 1;MOVE 1 17 1;MOVE 1 32 1;MOVE 14 5 1;MOVE 15 17 1;MOVE 17 20 1;MOVE 18 41 1;MOVE 35 37 1;MOVE 36 41 1;MOVE 37 19 1
+frame 80 agent 1
+  stdout: SPAWN 33 0 16;SPAWN 0 25 33;MOVE 0 21 1;MOVE 1 24 1;MOVE 5 4 1;MOVE 14 18 1;MOVE 16 38 1;MOVE 17 1 1;MOVE 19 37 1;MOVE 20 4 1;MOVE 22 40 1;MOVE 24 32 1;MOVE 25 12 1;MOVE 31 23 1;MOVE 32 17 1;MOVE 34 14 1;MOVE 35 15 1;MOVE 36 6 1;MOVE 37 35 1;MOVE 38 34 1;MOVE 40 5 1;MSG t41.8 m41.9 e181
+frame 81 agent 0
+  summary: $1 spawned 2 units
+frame 82 agent 0
+  summary: $1 surrounded 1 unit
+frame 83 agent 0
+  summary: $1 captured 4 triangles
+frame 84 agent 0
+  stderr: eval myTri 0 opTri 1 units 11/32 pot 1.56753 thr 0 killed 0/0
+      turn 26 iters 392/952 t 41.6132
+  stdout: MOVE 0 21 1;MOVE 5 4 1;MOVE 17 1 2;MOVE 19 15 1;MOVE 20 4 1;MOVE 32 1 1;MOVE 37 40 1;MOVE 41 5 1;MOVE 41 36 1
+frame 85 agent 1
+  stdout: SPAWN 25 0 12;SPAWN 21 0 16;SPAWN 14 18 34;SPAWN 36 18 34;MOVE 0 10 1;MOVE 0 16 1;MOVE 0 21 1;MOVE 1 20 1;MOVE 4 15 2;MOVE 5 4 1;MOVE 6 31 1;MOVE 12 0 1;MOVE 14 5 1;MOVE 15 19 1;MOVE 18 41 1;MOVE 21 22 1;MOVE 23 20 1;MOVE 24 1 1;MOVE 32 17 1;MOVE 34 36 1;MOVE 35 37 1;MOVE 36 23 1;MOVE 37 40 1;MOVE 38 34 1;MOVE 41 4 1;MSG t42.0 m42.0 e180
+frame 86 agent 0
+  summary: $1 spawned 4 units
+frame 87 agent 0
+  summary: $1 captured 3 triangles
+frame 88 agent 0
+  stderr: eval myTri 0 opTri 0 units 11/35 pot 1.49766 thr 0 killed 0/0
+      turn 27 iters 400/920 t 40.1436
+  stdout: MOVE 1 17 1;MOVE 1 32 1;MOVE 4 5 1;MOVE 4 15 1;MOVE 21 14 1;MOVE 36 18 1;MOVE 37 19 1;MOVE 40 19 1
+frame 89 agent 1
+  stdout: SPAWN 41 18 36;SPAWN 19 37 40;SPAWN 37 22 40;MOVE 0 21 1;MOVE 1 32 1;MOVE 4 15 1;MOVE 4 20 1;MOVE 5 4 1;MOVE 10 0 1;MOVE 14 5 1;MOVE 15 17 2;MOVE 16 14 1;MOVE 17 1 1;MOVE 17 32 1;MOVE 19 35 1;MOVE 20 1 1;MOVE 21 5 1;MOVE 21 22 1;MOVE 22 40 1;MOVE 23 36 1;MOVE 25 0 1;MOVE 31 23 1;MOVE 33 16 1;MOVE 34 18 1;MOVE 36 6 1;MOVE 36 34 1;MOVE 37 7 1;MOVE 37 35 1;MOVE 40 4 2;MOVE 41 4 1;MOVE 41 36 1;MSG t41.7 m42.0 e179
+frame 90 agent 0
+  summary: $1 spawned 3 units
+frame 91 agent 0
+  summary: $1 captured 2 triangles
+frame 92 agent 0
+  stderr: eval myTri 0 opTri 1 units 11/37 pot 1.02851 thr 0 killed 0/0
+      turn 28 iters 392/984 t 40.7175
+  stdout: MOVE 1 13 1;MOVE 5 4 1;MOVE 5 40 1;MOVE 14 34 1;MOVE 15 35 1;MOVE 17 1 1;MOVE 19 15 1;MOVE 32 24 1
+frame 93 agent 1
+  stdout: SPAWN 1 17 32;MOVE 0 10 1;MOVE 0 21 1;MOVE 1 11 1;MOVE 1 13 1;MOVE 1 17 1;MOVE 4 5 1;MOVE 4 20 1;MOVE 4 40 1;MOVE 4 41 1;MOVE 5 14 1;MOVE 5 40 1;MOVE 6 8 1;MOVE 7 37 1;MOVE 14 18 1;MOVE 15 35 1;MOVE 16 14 1;MOVE 17 15 1;MOVE 17 39 1;MOVE 18 34 1;MOVE 19 37 1;MOVE 20 4 1;MOVE 20 15 1;MOVE 21 22 1;MOVE 22 21 1;MOVE 32 24 1;MOVE 35 19 1;MOVE 36 6 1;MOVE 37 7 1;MOVE 41 5 1;MSG t41.7 m42.0 e188
+frame 94 agent 0
+  summary: $1 spawned 1 unit
+frame 95 agent 0
+  summary: $1 surrounded 1 unit
+frame 96 agent 0
+  summary: $1 captured 1 triangle
+frame 97 agent 0
+  stderr: eval myTri 0 opTri 1 units 10/38 pot 0.94956 thr 0 killed 0/0
+      turn 29 iters 400/960 t 40.7324
+  stdout: MOVE 1 13 1;MOVE 4 41 1;MOVE 13 24 1;MOVE 15 35 1;MOVE 19 35 1;MOVE 34 18 1;MOVE 40 5 1
+frame 98 agent 1
+  stdout: SPAWN 1 17 20;SPAWN 5 14 21;MOVE 1 24 1;MOVE 4 15 1;MOVE 5 41 1;MOVE 6 27 1;MOVE 7 26 1;MOVE 10 30 1;MOVE 14 16 1;MOVE 14 34 1;MOVE 15 17 1;MOVE 15 20 1;MOVE 17 1 1;MOVE 19 35 1;MOVE 21 14 1;MOVE 21 22 1;MOVE 22 37 1;MOVE 23 20 1;MOVE 24 13 1;MOVE 34 36 1;MOVE 34 38 1;MOVE 35 15 1;MOVE 35 39 1;MOVE 36 23 1;MOVE 37 7 1;MOVE 37 19 1;MOVE 39 17 1;MOVE 40 4 1;MOVE 40 19 1;MSG t41.8 m42.0 e182
+frame 99 agent 0
+  summary: $1 spawned 2 units
+frame 100 agent 0
+  summary: $1 surrounded 3 units
+frame 101 agent 0
+  summary: $1 captured 4 triangles
+frame 102 agent 0
+  stderr: eval myTri 0 opTri 1 units 7/42 pot 0.349739 thr 0 killed 0/0
+      turn 30 iters 464/1040 t 40.6784
+  stdout: MOVE 5 40 1;MOVE 13 2 1;MOVE 15 35 1;MOVE 35 9 1;MOVE 35 19 2;MOVE 41 23 1
+frame 103 agent 1
+  stdout: SPAWN 13 1 24;SPAWN 32 1 24;SPAWN 5 4 41;ATTACK 4 15 20 35;MOVE 1 17 1;MOVE 1 20 1;MOVE 5 21 1;MOVE 5 40 1;MOVE 7 37 1;MOVE 8 34 1;MOVE 11 31 1;MOVE 13 2 2;MOVE 14 16 1;MOVE 15 35 1;MOVE 16 0 1;MOVE 17 15 1;MOVE 17 39 1;MOVE 18 14 1;MOVE 19 35 1;MOVE 20 4 1;MOVE 20 23 1;MOVE 23 41 1;MOVE 24 1 1;MOVE 27 6 1;MOVE 30 7 1;MOVE 32 17 1;MOVE 34 38 1;MOVE 35 9 1;MOVE 36 18 1;MOVE 38 16 1;MOVE 39 35 1;MOVE 40 19 1;MOVE 41 5 1;MOVE 41 36 1;MSG t13.9 m42.0 e110
+frame 104 agent 0
+frame 105 agent 0
+  summary: $1 attacked 3 units
+      $1 spawned 3 units
+frame 106 agent 0
+  summary: $1 surrounded 3 units
+frame 107 agent 0
+  summary: $1 captured 3 triangles
+frame 108 agent 1
+  summary: $0: can't score any more points
+  stdout: SPAWN 26 7 9;MOVE 0 12 1;MOVE 1 13 1;MOVE 2 28 1;MOVE 4 20 1;MOVE 5 4 1;MOVE 5 41 1;MOVE 6 27 1;MOVE 7 30 1;MOVE 9 26 1;MOVE 13 2 1;MOVE 14 16 1;MOVE 15 17 1;MOVE 16 0 1;MOVE 16 33 1;MOVE 17 1 1;MOVE 17 32 1;MOVE 18 34 1;MOVE 19 15 1;MOVE 20 1 1;MOVE 21 0 1;MOVE 22 30 1;MOVE 23 31 1;MOVE 26 42 1;MOVE 31 28 1;MOVE 32 24 1;MOVE 34 8 1;MOVE 35 39 3;MOVE 36 6 1;MOVE 37 22 2;MOVE 39 17 1;MOVE 40 22 1;MOVE 41 23 1;MSG t16.5 m42.0 e1712
+result
+  scores: 0=-1 1=43
+  ranking (agent indexes, winner first): 1 0
+  tooltips: frame 108: $0 can't score any more points!
+

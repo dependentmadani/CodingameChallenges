@@ -1,0 +1,52 @@
+# OS and editor files
+.DS_Store
+.vscode/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Build output and debug symbols
+*.dSYM/
+*.o
+SummerChallenge2026/arena_tools/target/
+SummerChallenge2026/arena_tools/maven-cache/
+
+# Archives
+*.zip
+
+# Tool state (ruflo / claude-flow)
+.swarm/
+.claude-flow/
+.claude/settings.local.json
+
+# Nested git repos (third-party tools and other players' code), kept out of this repo
+cgarena/
+SpringChallenge2026/another_player/
+FallChallenge2026/referee_src/
+SummerChallenge2026/arena_tools/referee/
+SummerChallenge2026/arena_tools/cgarena/
+
+# Generated game data, logs and replays
+FallChallenge2026/data/
+FallChallenge2026/cg_api/logs/
+FallChallenge2026/arena/logs/
+SummerChallenge2026/arena_tools/simple-bot-check-*/
+**/replays/
+
+# Compiled binaries (sources are kept as .cpp)
+FallChallenge2026/bot_*
+!FallChallenge2026/bot_*.cpp
+FallChallenge2026/arena/*
+!FallChallenge2026/arena/*.cpp
+!FallChallenge2026/arena/*.hpp
+!FallChallenge2026/arena/*.py
+!FallChallenge2026/arena/*.txt
+FallChallenge2026/main
+FallChallenge2026/submitted
+SpringChallenge2026/arena
+SpringChallenge2026/bot
+SpringChallenge2026/other_code
+SummerChallenge2026/tuning/work/
+WinterChallenge2026/main

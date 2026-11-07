@@ -1,0 +1,15 @@
+# Whitelist: the project directory is ~1.5 GB (maven cache and saved replays),
+# and all of it would otherwise be shipped to the daemon as build context.
+*
+!main.cpp
+!test_bot.py
+!tuning/
+!tuning/**
+!arena_tools/
+!arena_tools/referee/
+!arena_tools/referee/target/
+!arena_tools/referee/target/referee.jar
+tuning/work/
+tuning/__pycache__/
+tuning/best.json
+tuning/spsa_log.txt
